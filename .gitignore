@@ -1,0 +1,44 @@
+# Ignore compiled Python files
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+
+# Virtual environments
+venv/
+.ipole_venv/
+.ipole-env/
+ipole_venv/
+
+# Logs and cache
+*.log
+*.out
+*.err
+*.tmp
+
+# VSCode settings
+.vscode/
+*.code-workspace
+
+# Mac and Linux system files
+.DS_Store
+*.swp
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore any ipole outputs
+*.h5
+*.pgm
+*.ppm
+*.fits
+*.dat
+
+# Output folders
+output/
+tmp/
+figures/
+
+# Ignore specific user directories
+aricarte/
+aricarte-copy/

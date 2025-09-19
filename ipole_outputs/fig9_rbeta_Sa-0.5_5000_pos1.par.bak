@@ -1,0 +1,28 @@
+# Fig9 RBETA Sa-0.5_5000 pos1
+dump /work/vmo703/grmhd_dump_samples/Sa-0.5_5000.h5
+outfile /work/vmo703/ipole_outputs/fig9_rbeta_Sa-0.5_5000_pos1.h5
+
+nx 320
+ny 320
+freqcgs 2.28e11
+thetacam 163
+phicam 0
+fovx_dsource 160
+fovy_dsource 160
+rcam 1000
+counterjet 0
+
+MBH 6.2e9
+dsource 1.69e7
+
+emission_type 4
+electronModel RBETA
+trat_small 1
+trat_large 20
+# RBETA uses the same ‘beta_crit’ threshold internally; this is normal:
+beta_crit 1
+beta_crit_coefficient 0.5
+sigma_cut 2
+
+positronRatio  5
+M_unit  2.27911e28

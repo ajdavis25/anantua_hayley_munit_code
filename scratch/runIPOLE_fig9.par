@@ -1,0 +1,27 @@
+# Fig 9 reproduction defaults
+# (things runIPOLE will overwrite are dump/outfile/M_unit/positronRatio)
+nx 320
+ny 320
+
+# 228 GHz (paper uses 228, not 230)
+freqcgs 2.28e11
+
+# camera & field of view used in the scripts/paper
+thetacam 163
+phicam 0
+fovx_dsource 160
+fovy_dsource 160
+rcam 1000
+counterjet 0
+
+# emission & e- temperature model
+emission_type 4
+electronModel RBETA     # <-- THIS is the important change vs your run
+
+# e- temperature tunings used in the positron scripts
+trat_small 1
+trat_large 20
+
+# “pos-branch” ipole tuning used in their scripts
+sigma_cut 2
+# (sigma_transition only matters in crit-beta; harmless to omit here)
