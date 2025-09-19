@@ -1,0 +1,56 @@
+# Required substitutions
+M_unit 3.840000E+25
+dump /work/vmo703/grmhd_dump_samples/Ma-0.5_5000.h5
+outfile /work/vmo703/ipole_outputs/image_Ma-0.5_5000_CRITBETAwJET_pos0.h5
+MunitOffset 8.50E+24
+MunitSlope 4.00E+00
+Munit 7.49E+24
+positronRatio 0
+electronModel CRITBETAwJET
+beta_crit 1.0
+counterjet 0
+spin -0.5
+
+# Image resolution
+nx 160
+ny 160
+
+# Emission model (e.g., Dexter 2016)
+emission_type 4
+
+# Physical object parameters (M87 for example)
+MBH 6.2e9
+dsource 16.9e6
+freqcgs 230.e9
+
+# Radiative model tuning
+trat_small 1
+trat_large 20
+
+# Adaptive image refinement (optional)
+refine_abs 2e-2
+refine_rel 1e-2
+refine_cut 0
+
+# Camera setup
+rcam 1000
+thetacam 17
+phicam 0
+rotcam 0
+
+# Field of view in microarcseconds (μas)
+fovx_dsource 160
+fovy_dsource 160
+
+# Other options
+qu_conv 0
+quench_output 0
+add_ppm 0
+only_unpolarized 0
+xoff 0
+yoff 0
+
+# Path trace options
+trace 0
+trace_stride 1
+trace_outf trace.h5

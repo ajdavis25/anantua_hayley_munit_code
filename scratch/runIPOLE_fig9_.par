@@ -1,0 +1,30 @@
+# Fig 9 RBETA template (things we’ll overwrite later: M_unit, positronRatio, outfile)
+dump /work/vmo703/grmhd_dump_samples/Sa-0.5_5000.h5
+outfile /work/vmo703/ipole_outputs/fig9_tmp.h5
+
+# 228 GHz
+freqcgs 2.28e11
+
+# camera & FOV
+nx 320
+ny 320
+thetacam 163
+phicam 0
+fovx_dsource 160
+fovy_dsource 160
+rcam 1000
+counterjet 0
+rmax_geo 50
+
+# emission & e- temperature model (RBETA)
+emission_type 4
+electronModel RBETA
+trat_small 1
+trat_large 20
+
+# “pos-branch” ipole knobs used in the scripts
+sigma_cut 2
+
+# placeholders that the tuner will change
+M_unit 1.0e28
+positronRatio 0
