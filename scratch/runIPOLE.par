@@ -1,13 +1,13 @@
 #Created automatically by runIPOLE. 
  
-dump /work/vmo703/grmhd_dump_samples/Ma-0.5_5000.h5
-outfile /work/vmo703/ipole_outputs/fig13_MADa-0.5_RBETA_1.000.h5
+dump /work/vmo703/grmhd_dump_samples/Sa-0.5_5000.h5
+outfile /work/vmo703/ipole_outputs/Sa-0.5_5000/CRITBETA_0.h5
 thetacam 163.0
 phicam 0.0
 freqcgs 228000000000.0
 MBH 6.20e+09
 dsource 1.69e+07
-M_unit 2.5579786035781174e+25
+M_unit 6.087639029789497e+28
 trat_large 20
 nx 320
 ny 320
@@ -15,12 +15,12 @@ fov 160.0
 counterjet 0
 rmax_geo 50
 target_nturns -1
-positronRatio 1.0
+positronRatio 0.0
 beta_crit 1
 beta_crit_coefficient 0.5
 kappa_kappa 3.5
 emission_type 4
-electronModel 2
+electronModel 4
 constant_beta_e0 0.01
 sigma_transition 2.0
 sigma_cut 2.0
