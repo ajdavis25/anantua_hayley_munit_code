@@ -29,6 +29,7 @@ ipole_venv/
 
 # Ignore any ipole outputs
 *.h5
+*.par
 *.pgm
 *.ppm
 *.fits
