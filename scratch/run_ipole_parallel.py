@@ -292,6 +292,7 @@ def append_to_summary(rows, path):
         writer.writerows(rows)
         fcntl.flock(f, fcntl.LOCK_UN)
 
+
 if __name__ == "__main__":
     munit_params_dict = load_munit_params(csv_path)
     all_dumps = sorted(f for f in os.listdir(dump_dir) if f.endswith(".h5"))
