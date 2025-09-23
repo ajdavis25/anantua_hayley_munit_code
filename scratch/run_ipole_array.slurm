@@ -15,4 +15,4 @@ cd /work/vmo703/aricarte/aricarte-copy/aricarte/PositronIPOLEScripts
 source /work/vmo703/ipole_venv/bin/activate
 
 # Run Python script with array index
-python3 run_ipole_parallel.py $SLURM_ARRAY_TASK_ID
+python3 render_ipole_outputs.py $SLURM_ARRAY_TASK_ID

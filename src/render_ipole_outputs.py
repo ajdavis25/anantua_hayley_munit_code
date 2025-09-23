@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
-import os, re, csv, math, h5py, time, sys, fcntl, numpy as np
+import os, re, csv, math, h5py, time, sys, fcntl, logging
+from typing import List, Optional, Tuple, Union, Dict
 from pathlib import Path
 from dataclasses import dataclass
 from ipole_many_models import runIPOLE
-from concurrent.futures import ProcessPoolExecutor, as_completed
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        # logging.FileHandler("ipole_batch.log") # optional file output
+    ]
+)
 
 
 @dataclass
@@ -34,7 +44,24 @@ class MunitParams:
     def M_base(self): return self.munit
 
 
-def load_munit_params(csv_path):
+@dataclass(frozen=True)
+class SimDefaults:
+    """
+    default parameters used for IPOLE simulations
+    """
+    Rhigh: int = 20
+    sigma_cut: float = 2.0
+    thetacam: float = 163.0
+    rmax_geo: int = 50
+    freq_Hz: float = 228e9
+    fov: float = 160.0
+    npixel: int = 320
+    counterjet: int = 0
+    T0: float = 0.5
+    T1: float = 0.5
+
+
+def load_munit_params(csv_path: str) -> Dict[Tuple[int, str, str, float], MunitParams]:
     """
     loads munit parameters from csv file into a dictionary
 
@@ -80,21 +107,13 @@ def load_munit_params(csv_path):
 
 
 # --- CONSTANT SETTINGS ---
-ipole = "/work/vmo703/aricarte/run_ipole.sh"
-dump_dir = "/work/vmo703/grmhd_dump_samples/"
-output_dir = "/work/vmo703/ipole_outputs/"
-csv_path = "/work/vmo703/data/munits_table.csv"
-summary_path = Path("/work/vmo703/data/summary_table.csv")
+defaults = SimDefaults()
+ipole: str = "/work/vmo703/aricarte/run_ipole.sh"
+dump_dir: str = "/work/vmo703/grmhd_dump_samples/"
+output_dir: str = "/work/vmo703/ipole_outputs/"
+csv_path: str = "/work/vmo703/data/munits_table.csv"
+summary_path: Path = Path("/work/vmo703/data/summary_table.csv")
 
-Rhigh = 20
-sigma_cut = 2.0
-thetacam = 163.0
-rmax_geo = 50
-freq_Hz = 228e9
-fov = 160.0
-npixel = 320
-counterjet = 0
-T0, T1 = 0.50, 0.50
 
 model_settings = {
     "RBETA":        {"electronModel": 2, "sigma_transition": 2.0},
@@ -104,7 +123,7 @@ model_settings = {
 }
 
 
-def parse_sim_metadata(simFile):
+def parse_sim_metadata(simFile: str) -> Tuple[str, float, int]:
     """
     parses metadata from filename
 
@@ -132,7 +151,7 @@ def parse_sim_metadata(simFile):
     return mad_sane, float(spin_str), int(timestep)
 
 
-def read_flux(h5path):
+def read_flux(h5path: str) -> Tuple[float, Optional[float], Optional[float], Optional[float]]:
     """
     reads total and polarized flux data from a HDF5 file
     this function opens an HDF5 file and extracts the total flux (F), and
@@ -155,7 +174,14 @@ def read_flux(h5path):
     return F, Q, U, V
 
 
-def run_once(r, Munit_used, simFile, nameBase, electronModel, sigma_transition):
+def run_once(
+    r: float, 
+    Munit_used: float, 
+    simFile: str, 
+    nameBase: str,
+    electronModel: int, 
+    sigma_transition: float
+    ) -> Tuple[float, str]:
     """
     executes a single run of the IPOLE simulation and reads the resulting flux
     this function constructs an output filename based on the input parameters,
@@ -176,16 +202,35 @@ def run_once(r, Munit_used, simFile, nameBase, electronModel, sigma_transition):
               (F: float, out: str)
     """
     out = nameBase.replace(".h5", f"_{int(r)}.h5")
-    runIPOLE(simFile, out, Munit_used, ipoleExecutable=ipole,
-             thetacam=thetacam, Rhigh=Rhigh, freq_Hz=freq_Hz,
-             fov=fov, npixel=npixel, counterjet=counterjet,
-             rmax_geo=rmax_geo, positronRatio=r,
-             electronModel=electronModel, sigma_cut=sigma_cut,
+    runIPOLE(simFile, 
+             out, 
+             Munit_used, 
+             ipoleExecutable=ipole,
+             thetacam=defaults.thetacam, 
+             Rhigh=defaults.Rhigh, 
+             freq_Hz=defaults.freq_Hz,
+             fov=defaults.fov, 
+             npixel=defaults.npixel, 
+             counterjet=defaults.counterjet,
+             rmax_geo=defaults.rmax_geo, 
+             positronRatio=r,
+             electronModel=electronModel, 
+             sigma_cut=defaults.sigma_cut,
              sigma_transition=sigma_transition)
     return read_flux(out)[0], out
 
 
-def secant_for_flux(ratio, target, mu0, mu1, n_steps, simFile, nameBase, electronModel, sigma_transition):
+def secant_for_flux(
+    ratio: float,
+    target: float, 
+    mu0: float, 
+    mu1: Optional[float], 
+    n_steps: int, 
+    simFile: str, 
+    nameBase: str,
+    electronModel: int,
+    sigma_transition: float
+    ) -> Tuple[float, float]:
     """
     finds the Munit value that produces a target flux using an iterative secant method
     this function performs a search in a total flux equal to the specified target value
@@ -225,7 +270,7 @@ def secant_for_flux(ratio, target, mu0, mu1, n_steps, simFile, nameBase, electro
     return Mcurr, Fcurr
 
 
-def process_dump_file(dump_file):
+def process_dump_file(dump_file: str) -> List[Dict[str, Union[int, str, float, None]]]:
     """
     processes a single dump file from a GRMHD simulation to calculate and
     return derived physical properties and simulation parameters for various
@@ -246,7 +291,7 @@ def process_dump_file(dump_file):
     for model_name, settings in model_settings.items():
         key = (timestep, mad_sane, model_name, spin)
         if key not in munit_params_dict:
-            print(f"[{os.getpid()}] skipping {key} — not found in CSV")
+            logging.warning(f"[{os.getpid()}] skipping {key} — not found in CSV")
             continue
 
         p = munit_params_dict[key]
@@ -260,8 +305,8 @@ def process_dump_file(dump_file):
 
         U0_guess = p.A0 + p.S0 * p.M_base
         U1_guess = p.A0 + p.S0 * p.M_base / 3.0
-        U0_star, _ = secant_for_flux(0.0, T0, U0_guess, None, 1, simFile, nameBase, electronModel, sigma_transition)
-        U1_star, _ = secant_for_flux(1.0, T1, U1_guess, None, 2, simFile, nameBase, electronModel, sigma_transition)
+        U0_star, _ = secant_for_flux(0.0, defaults.T0, U0_guess, None, 1, simFile, nameBase, electronModel, sigma_transition)
+        U1_star, _ = secant_for_flux(1.0, defaults.T1, U1_guess, None, 2, simFile, nameBase, electronModel, sigma_transition)
         S = 3.0 * (U0_star - U1_star) / (2.0 * p.M_base)
         A = U1_star - S * p.M_base / 3.0
 
@@ -293,7 +338,7 @@ def process_dump_file(dump_file):
     return rows    
 
 
-def append_to_summary(rows, path):
+def append_to_summary(rows: List[Dict[str, Union[int, str, float, None]]], path: str):
     """
     appends a list of dictionaries (rows) to a CSV file in a thread-safe manner
 
@@ -331,12 +376,12 @@ if __name__ == "__main__":
     all_dumps = sorted(f for f in os.listdir(dump_dir) if f.endswith(".h5"))
 
     if "SLURM_ARRAY_TASK_ID" not in os.environ:
-        print("SLURM_ARRAY_TASK_ID not set. This script is for SLURM array jobs only")
+        logging.error("SLURM_ARRAY_TASK_ID not set, this script is for SLURM array jobs only")
         sys.exit(1)
 
     index = int(os.environ["SLURM_ARRAY_TASK_ID"])
     if index >= len(all_dumps):
-        print(f"index {index} out of range for available dumps")
+        logging.error(f"SLURM index {index} out of range for {len(all_dumps)} available dumps")
         sys.exit(1)
 
     dump_file = all_dumps[index]
@@ -345,4 +390,4 @@ if __name__ == "__main__":
     if result_rows:
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         append_to_summary(result_rows, summary_path)
-        print(f"appended results for {dump_file} to {summary_path}")
+        logging.info(f"appended results for {dump_file} to {summary_path}")
