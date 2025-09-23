@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-
-
 import os, re, csv, math, h5py, time, sys, fcntl, numpy as np
-from dataclasses import dataclass
 from pathlib import Path
+from dataclasses import dataclass
 from ipole_many_models import runIPOLE
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -228,6 +226,18 @@ def secant_for_flux(ratio, target, mu0, mu1, n_steps, simFile, nameBase, electro
 
 
 def process_dump_file(dump_file):
+    """
+    processes a single dump file from a GRMHD simulation to calculate and
+    return derived physical properties and simulation parameters for various
+    emission models
+
+    args:
+        dump_file (str): the filename of the simulation dump file to process
+
+    returns:
+        list: a list of dictionaries, where each dictionary contains the
+              calculated data and metadata for a specific model and positron ratio
+    """
     simFile = os.path.join(dump_dir, dump_file)
     mad_sane, spin, timestep = parse_sim_metadata(simFile)
     rows = []
@@ -259,8 +269,8 @@ def process_dump_file(dump_file):
             U_used = A + S * p.M_base / (1.0 + 2.0*r)
             F, out = run_once(r, U_used, simFile, nameBase, electronModel, sigma_transition)
             _, Q, Uq, V = read_flux(out)
-            PoverI = (math.sqrt(Q**2 + Uq**2)/F) if (Q is not None and Uq is not None and F > 0) else None
-            VoverI = (V/F) if (V is not None and F > 0) else None
+            PoverI = (math.sqrt(Q**2 + Uq**2)/F) if (Q is not None and Uq is not None and F != 0) else None
+            VoverI = (V/F) if (V is not None and F != 0) else None
 
             row = {
                 "Timestep": timestep,
@@ -284,6 +294,19 @@ def process_dump_file(dump_file):
 
 
 def append_to_summary(rows, path):
+    """
+    appends a list of dictionaries (rows) to a CSV file in a thread-safe manner
+
+    this function is designed to be safe for use in a multi-process or
+    multi-threaded environment by using file locking to prevent race conditions
+    where multiple processes might try to write to the same file simultaneously
+
+    args:
+        rows (list): a list of dictionaries, where each dictionary represents
+                     a row of data to be written - assumed all dictionaries
+                     have the same keys
+        path (str): the file path to the CSV file
+    """
     with open(path, "a", newline="") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
@@ -294,6 +317,16 @@ def append_to_summary(rows, path):
 
 
 if __name__ == "__main__":
+    """
+    1. loads munit parameters from CSV
+    2. get a sorted list of all dump files
+    3. check for SLURM_ARRAY_TASK_ID environment variable
+    4. retrieve the unique task ID for the job
+    5. validate index
+    6. select which dump file to be processed
+    7. process the dump file
+    8. append results to summary CSV
+    """
     munit_params_dict = load_munit_params(csv_path)
     all_dumps = sorted(f for f in os.listdir(dump_dir) if f.endswith(".h5"))
 
