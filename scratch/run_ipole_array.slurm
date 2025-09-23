@@ -9,7 +9,7 @@
 #SBATCH --time=1-00:00:00  # adjust to your liking
 #SBATCH --array=0-<N-1>%10  # re-insert this dynamically
 
-cd /work/scratch/PositronIPOLEScripts
+cd /work/vmo703/aricarte/aricarte-copy/aricarte/PositronIPOLEScripts
 
 # Activate your env if needed
 source /work/vmo703/ipole_venv/bin/activate
