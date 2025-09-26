@@ -2,24 +2,43 @@
 import argparse
 import csv
 import re
+import h5py
 from pathlib import Path
 
-from runner import IPoleRunner
+from munit_oskey import offset_slope_key
 
-# electron models we care about
+# Electron models (order must match your 4-tuple lists)
 E_MODELS = ["RBETA", "RBETAwJET", "CRITBETA", "CRITBETAwJET"]
+MODEL_IDX = {m: i for i, m in enumerate(E_MODELS)}
 POSITIONS = [0, 1]
 
-offset_slope_table = {
-    # (electronModel, pos) : (offset, slope)
-    ("RBETA", 0): (0.0, 0.0),
-    ("RBETA", 1): (0.0, 0.0),
-    ("RBETAWJET", 0): (0.0, 0.0),
-    ("RBETAWJET", 1): (0.0, 0.0),
-    ("CRITBETA", 0): (0.0, 0.0),
-    ("CRITBETA", 1): (0.0, 0.0),
-    # add more as needed
-}
+# Baseline Munit constants
+SANE_BASE_MUNIT = 1.83e27
+MAD_BASE_MUNIT = 7.49e24
+
+
+def get_sim_key(flow_label: str, spin: float) -> str:
+    """Exact keys expected by offset_slope_key: 'SANE-0.5', 'SANE+0.94', etc."""
+    if abs(spin - 0.94) < 1e-3:
+        return f"{flow_label}+0.94"
+    if abs(spin + 0.94) < 1e-3:
+        return f"{flow_label}-0.94"
+    return f"{flow_label}{spin:+.1f}"  # e.g. SANE-0.5 / MAD-0.5
+
+
+def read_timestep_from_h5(dump_file: Path) -> int:
+    """Read true simulation time [M] from HDF5 header."""
+    candidate_keys = ["/fluid_header/t", "/header/t", "t"]
+    with h5py.File(dump_file, "r") as H:
+        for key in candidate_keys:
+            if key in H:
+                return int(round(float(H[key][()])))
+    raise KeyError(f"No timestep field found in {dump_file}")
+
+
+def base_munit_for_flow(flow_label: str) -> float:
+    return SANE_BASE_MUNIT if flow_label == "SANE" else MAD_BASE_MUNIT
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -31,85 +50,107 @@ def main():
         "-o", "--outfile", required=True,
         help="Path to output CSV (munits_table style)"
     )
-    parser.add_argument(
-        "--ipole_path", required=True,
-        help="Path to ipole binary or wrapper script (e.g. run_ipole.sh)"
-    )
-    parser.add_argument("--dump_range", nargs=2, type=int, metavar=("START","END"))
-
-    # NEW: parameters for the optimization
-    parser.add_argument(
-        "--thetacam", type=float, default=163.0,
-        help="Camera inclination angle in degrees (default: 163.0)"
-    )
-    parser.add_argument(
-        "--flux_goal", type=float, default=0.5,
-        help="Target flux in Jy (default: 0.5)"
-    )
-
+    parser.add_argument("--dump_range", nargs=2, type=int, metavar=("START", "END"))
     args = parser.parse_args()
 
     folder = Path(args.folder)
-    runner = IPoleRunner(ipole_path=args.ipole_path)
 
-    thetacam = args.thetacam
-    flux_goal = args.flux_goal
+    rows = []
+    seen = set()  # dedupe (dump_index, flow, spin, model, pos)
 
-    # open CSV for writing
+    for dump_file in sorted(folder.glob("*.h5")):
+        stem = dump_file.stem  # e.g. Sa-0.5_4000 or Ma+0.94_5000
+        try:
+            flow_token, dump_index_str = stem.split("_")
+            dump_index = int(dump_index_str)
+        except Exception:
+            print(f"[warn] Unexpected filename format: {stem}")
+            continue
+
+        # parse flow & spin from filename
+        m = re.match(r"^(Sa|Ma)([+-]\d+\.?\d*)$", flow_token)
+        if not m:
+            print(f"[warn] Could not parse flow/spin from {stem}")
+            continue
+        sim_type, spin_str = m.groups()
+        spin = float(spin_str)
+        flow_label = "SANE" if sim_type == "Sa" else "MAD"
+
+        # true timestep
+        try:
+            timestep = read_timestep_from_h5(dump_file)
+        except KeyError as e:
+            print(f"[warn] {e}")
+            continue
+
+        if args.dump_range:
+            start, end = args.dump_range
+            if not (start <= timestep <= end):
+                continue
+
+        tkey = str(timestep)
+        if tkey not in offset_slope_key:
+            print(f"[warn] No munit data for timestep={timestep}")
+            continue
+
+        sim_key = get_sim_key(flow_label, spin)
+        params = offset_slope_key[tkey]
+
+        if sim_key not in params["MunitOffset"]:
+            print(f"[warn] No data for t={timestep}, sim={sim_key}")
+            continue
+
+        offsets_list = params["MunitOffset"][sim_key]
+        slopes_list  = params["MunitSlope"][sim_key]
+        base_M = base_munit_for_flow(flow_label)
+
+        for model in E_MODELS:
+            mi = MODEL_IDX[model]
+            if mi >= len(offsets_list) or mi >= len(slopes_list):
+                # skip incomplete entries quietly
+                continue
+
+            offset = float(offsets_list[mi])
+            slope  = float(slopes_list[mi])
+
+            for pos in POSITIONS:
+                key = (dump_index, flow_label, round(spin, 2), model, pos)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                MunitUsed = offset + (slope * base_M) / (1 + 2 * pos)
+                rows.append((
+                    dump_index, timestep, flow_label, model, spin, pos,
+                    offset, slope, base_M, MunitUsed, ""
+                ))
+
+    # stable, human-friendly ordering:
+    flow_order = {"SANE": 0, "MAD": 1}
+    def spin_rank(x: float) -> int:
+        if abs(x - (-0.5)) < 1e-6: return 0
+        if abs(x - (0.94)) < 1e-3: return 1
+        return 2
+
+    rows.sort(key=lambda r: (
+        flow_order.get(r[2], 99),      # flow: SANE before MAD (or flip if you want MAD first)
+        spin_rank(r[4]),               # spin: -0.5 → +0.94
+        r[0],                          # dump_index
+        MODEL_IDX[r[3]],               # model
+        r[5]                           # pos
+    ))
+
+    # write
     with open(args.outfile, "w", newline="") as fout:
         writer = csv.writer(fout)
-        # header matches your munits_table.csv
         writer.writerow([
-            "timestep","flow","model","spin","pos",
-            "MunitOffset","MunitSlope","Munit","MunitMax","MunitUsed","notes"
+            "dump_index", "timestep", "MAD/SANE", "model", "spin", "pos",
+            "MunitOffset", "MunitSlope", "Munit", "MunitUsed", "notes"
         ])
+        writer.writerows(rows)
 
-        for dump_file in sorted(folder.glob("*.h5")):
-            # extract timestep and flow from filename
-            stem = dump_file.stem  # e.g. Sa-0.5_4000 or Ma+0.94_6000
-            flow, timestep = stem.split("_")
-            timestep = int(timestep)
+    print(f"[done] wrote {len(rows)} rows to {args.outfile}")
 
-            # only keep in range if requested
-            if args.dump_range:
-                start, end = args.dump_range
-                if not (start <= timestep <= end):
-                    continue
-
-            # parse spin robustly (handles both + and -)
-            match = re.match(r"^(Sa|Ma)([+-]\d+\.?\d*)$", flow)
-            if match:
-                sim_type, spin_str = match.groups()
-                spin = float(spin_str)
-            else:
-                sim_type, spin = flow, 0.0
-
-            flow_label = {"Sa": "SANE", "Ma": "MAD"}.get(sim_type, sim_type)
-
-            # loop over models and pos
-            for electronModel in E_MODELS:
-                for pos in POSITIONS:
-                    Munit_val = runner.find_munit(
-                        dump_file, thetacam=thetacam, flux_goal=flux_goal
-                    )
-
-                    offset, slope = offset_slope_table.get((electronModel, pos), (0.0, 0.0))
-                    positronRatio = float(pos)  # adjust if pos maps differently
-                    MunitUsed = offset + (slope * Munit_val) / (1 + 2 * positronRatio)
-
-                    writer.writerow([
-                        timestep,
-                        flow_label,
-                        electronModel,
-                        spin,
-                        pos,
-                        offset,
-                        slope,
-                        Munit_val,
-                        0.0,  # placeholder for MunitMax
-                        MunitUsed,
-                        ""
-                    ])
 
 if __name__ == "__main__":
     main()
