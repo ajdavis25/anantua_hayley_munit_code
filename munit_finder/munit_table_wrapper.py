@@ -7,33 +7,33 @@ from pathlib import Path
 
 from munit_oskey import offset_slope_key
 
-# Electron models (order must match your 4-tuple lists)
+# electron models (order must match 4-tuple lists)
 E_MODELS = ["RBETA", "RBETAwJET", "CRITBETA", "CRITBETAwJET"]
 MODEL_IDX = {m: i for i, m in enumerate(E_MODELS)}
 POSITIONS = [0, 1]
 
-# Baseline Munit constants
+# baseline Munit constants
 SANE_BASE_MUNIT = 1.83e27
 MAD_BASE_MUNIT = 7.49e24
 
 
 def get_sim_key(flow_label: str, spin: float) -> str:
-    """Exact keys expected by offset_slope_key: 'SANE-0.5', 'SANE+0.94', etc."""
+    """exact keys expected by offset_slope_key: 'SANE-0.5', 'SANE+0.94', etc."""
     if abs(spin - 0.94) < 1e-3:
         return f"{flow_label}+0.94"
     if abs(spin + 0.94) < 1e-3:
         return f"{flow_label}-0.94"
-    return f"{flow_label}{spin:+.1f}"  # e.g. SANE-0.5 / MAD-0.5
+    return f"{flow_label}{spin:+.1f}" # e.g. SANE-0.5 / MAD-0.5
 
 
 def read_timestep_from_h5(dump_file: Path) -> int:
-    """Read true simulation time [M] from HDF5 header."""
+    """read true simulation time [M] from HDF5 header."""
     candidate_keys = ["/fluid_header/t", "/header/t", "t"]
     with h5py.File(dump_file, "r") as H:
         for key in candidate_keys:
             if key in H:
                 return int(round(float(H[key][()])))
-    raise KeyError(f"No timestep field found in {dump_file}")
+    raise KeyError(f"no timestep field found in {dump_file}")
 
 
 def base_munit_for_flow(flow_label: str) -> float:
@@ -52,21 +52,21 @@ def main():
     folder = Path(args.folder)
 
     rows = []
-    seen = set()  # dedupe (dump_index, flow, spin, model, pos)
+    seen = set() # dedupe (dump_index, flow, spin, model, pos)
 
     for dump_file in sorted(folder.glob("*.h5")):
-        stem = dump_file.stem  # e.g. Sa-0.5_4000 or Sa+0.94_5000
+        stem = dump_file.stem # e.g. Sa-0.5_4000 or Sa+0.94_5000
         try:
             flow_token, dump_index_str = stem.split("_")
             dump_index = int(dump_index_str)
         except Exception:
-            print(f"[warn] Unexpected filename format: {stem}")
+            print(f"[warn] unexpected filename format: {stem}")
             continue
 
         # parse flow & spin from filename
         m = re.match(r"^(Sa|Ma)([+-]\d+\.?\d*)$", flow_token)
         if not m:
-            print(f"[warn] Could not parse flow/spin from {stem}")
+            print(f"[warn] could not parse flow/spin from {stem}")
             continue
         sim_type, spin_str = m.groups()
         spin = float(spin_str)
@@ -104,7 +104,7 @@ def main():
         for model in E_MODELS:
             mi = MODEL_IDX[model]
             if mi >= len(offsets_list) or mi >= len(slopes_list):
-                print(f"[warn] Incomplete data for {sim_key} at timestep={timestep}, model={model}")
+                print(f"[warn] incomplete data for {sim_key} at timestep={timestep}, model={model}")
                 continue
 
             offset = float(offsets_list[mi])
