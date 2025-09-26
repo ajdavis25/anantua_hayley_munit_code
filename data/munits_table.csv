@@ -98,4 +98,4 @@ Timestep,MAD/SANE,Model,Spin,positron frac,MunitOffset,MunitSlope,Munit ,MunitUs
 6000,SANE,CRITBETAwJET,(+)0.94,0,1.20E+27,1.20E+00,1.83E+27,3.39E+27,
 6000,SANE,CRITBETAwJET,(+)0.94,1,1.20E+27,1.20E+00,1.83E+27,1.93E+27,
 ,,,,,,,,,
-,Positron Munit Equation: MunitUsed = MunitOffset + MunitSlope+Munit / (1 + 2*positronRatio),,,,,,,,
+,Positron Munit Equation: MunitUsed = MunitOffset + MunitSlope+Munit / (1 + 2*positronRatio),,,,,,,,,
