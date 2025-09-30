@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-import argparse
-import csv
-import re
-import h5py
+import argparse, csv, re, h5py
 from pathlib import Path
 
 from munit_oskey import offset_slope_key
@@ -18,7 +15,7 @@ MAD_BASE_MUNIT = 7.49e24
 
 
 def get_sim_key(flow_label: str, spin: float) -> str:
-    """exact keys expected by offset_slope_key: 'SANE-0.5', 'SANE+0.94', etc."""
+    """exact keys expected by offset_slope_key: 'SANE-0.5', 'SANE+0.94', etc"""
     if abs(spin - 0.94) < 1e-3:
         return f"{flow_label}+0.94"
     if abs(spin + 0.94) < 1e-3:
@@ -27,7 +24,7 @@ def get_sim_key(flow_label: str, spin: float) -> str:
 
 
 def read_timestep_from_h5(dump_file: Path) -> int:
-    """read true simulation time [M] from HDF5 header."""
+    """read true simulation time [M] from HDF5 header"""
     candidate_keys = ["/fluid_header/t", "/header/t", "t"]
     with h5py.File(dump_file, "r") as H:
         for key in candidate_keys:
