@@ -209,7 +209,7 @@ offset_slope_key = {
             ],
             "SANE+0.94": [
                 0.6,
-                1e+27,
+                1e+27, # CHECK THIS VALUE
                 0.43,
                 0.7
             ]
@@ -329,7 +329,7 @@ offset_slope_key = {
             "MAD+0.94": [
                 8e+24,
                 5e+24,
-                0.0,
+                0.0, # CHECK THIS VALUE
                 3.55e+24
             ],
             "MAD-0.5": [
@@ -355,7 +355,7 @@ offset_slope_key = {
             "MAD+0.94": [
                 2.2,
                 2.0,
-                0.0,
+                0.0, # CHECK THIS VALUE
                 2.0
             ],
             "MAD-0.5": [
