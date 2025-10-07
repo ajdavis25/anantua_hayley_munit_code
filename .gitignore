@@ -41,6 +41,4 @@ tmp/
 figures/
 
 # Ignore specific user directories
-aricarte/
-aricarte-copy/
 ipole/

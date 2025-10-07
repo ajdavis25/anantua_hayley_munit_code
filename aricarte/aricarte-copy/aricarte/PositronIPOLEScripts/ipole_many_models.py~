@@ -1,0 +1,258 @@
+import os
+import numpy as np
+import time
+
+#This is a dictionary that returns the dump range for a given folder.
+library = '/n/holystore01/LABS/bhi/Lab/narayan_lab/grmhd_library/'
+folderToDumpRange = {}
+
+#MADs
+folderToDumpRange[library + 'MAD/a+0.94/384x192x192_IHARM'] = [1000,2000]
+folderToDumpRange[library + 'MAD/a+0.5/384x192x192_IHARM'] = [1000,2000]
+folderToDumpRange[library + 'MAD/a0/384x192x192_IHARM'] = [1000,1999]
+folderToDumpRange[library + 'MAD/a-0.5/384x192x192_IHARM'] = [1000,1800]
+folderToDumpRange[library + 'MAD/a-0.94/384x192x192_IHARM'] = [1400,2000]
+
+#SANEs
+folderToDumpRange[library + 'SANE/a+0.94/288x128x128_IHARM'] = [600,1200]
+folderToDumpRange[library + 'SANE/a+0.5/288x128x128_IHARM'] = [600,1100]
+folderToDumpRange[library + 'SANE/a0/288x128x128_IHARM'] = [1000,2000]
+folderToDumpRange[library + 'SANE/a-0.5/288x128x128_IHARM'] = [1000,1600]
+folderToDumpRange[library + 'SANE/a-0.94/288x128x128_IHARM'] = [1200,1800]
+
+def runIPOLE(inputSimulationFile, outputFileName, Munit, Rhigh=20, freq_Hz=230e9, MBH=6.2e9, npixel=160, ipoleExecutable='../ipole_dev/ipole', \
+	thetacam=163.0, phicam=0.0, fov=160.0, rmax_geo=50, parameterFileName='./runIPOLE.par', counterjet=0, target_nturns=-1, positronRatio=0, \
+	beta_crit_coefficient=0.5, beta_crit=1, dsource=16.9e6, unpol=False,constant_beta_e0=0.01, emission_type=4,electronModel=2,sigma_transition=0.00001,sigma_cut=1.0, kappa_slope=3.5, trace=0, traceCoordinates=(0,0), trace_outf=None):
+
+	"""
+	This function allows you to run IPOLE from within Python.  Not all of the free parameters are implemented in every version of IPOLE, and if they're not
+	useable by the ipoleExecutable, they will be ignored.
+	"""
+
+	if trace_outf==None:
+		#Change default name of trace file
+		trace_outf = outputFileName.replace('.h5', '_trace.h5')
+
+	if parameterFileName is None:
+		#IPOLE can take all of the free parameters on the command line.
+		command = ipoleExecutable
+		if unpol:
+			command += ' -unpol'
+		command += ' --dump='+inputSimulationFile
+		command += ' --outfile='+outputFileName
+		command += ' --thetacam='+str(thetacam)
+		command += ' --phicam='+str(phicam)
+		command += ' --freqcgs='+str(freq_Hz)
+		command += ' --MBH={0:2.2e}'.format(MBH)
+		command += ' --dsource={0:2.2e}'.format(dsource)
+		command += ' --M_unit='+str(Munit)
+		command += ' --trat_large='+str(Rhigh)
+		command += ' --nx='+str(npixel)
+		command += ' --ny='+str(npixel)
+		command += ' --fov='+str(fov)
+		command += ' --counterjet='+str(counterjet)
+		command += ' --rmax_geo='+str(rmax_geo)
+		command += ' --target_nturns='+str(target_nturns)
+		command += ' --positronRatio='+str(positronRatio)
+		command += ' --beta_crit='+str(beta_crit)
+		command += ' --beta_crit_coefficient='+str(beta_crit_coefficient)
+		command += ' --emission_type='+str(emission_type)
+		command += ' --electronModel='+str(electronModel)
+		command += ' --constant_beta_e0='+str(constant_beta_e0)
+		command += ' --kappa_kappa='+str(kappa_slope)
+		command += ' --sigma_transition='+str(sigma_transition)
+		command += ' --sigma_cut='+str(sigma_cut)
+		if trace:
+			command += ' --trace='+str(trace)
+			command += ' --trace_i='+str(traceCoordinates[0])
+			command += ' --trace_j='+str(traceCoordinates[1])
+			command += ' --trace_outf='+trace_outf
+		print(command)
+		os.system(command)
+
+	else:
+		#Alternatively, if you specify a parameter file, ipole will read from that instead.  Useful for debugging or keeping records.
+		with open(parameterFileName, 'w') as myfile:
+			myfile.write('#Created automatically by runIPOLE. \n \n')
+			myfile.write('dump '+inputSimulationFile+'\n')
+			myfile.write('outfile '+outputFileName+'\n')
+			myfile.write('thetacam '+str(thetacam)+'\n')
+			myfile.write('phicam '+str(phicam)+'\n')
+			myfile.write('freqcgs '+str(freq_Hz)+'\n')
+			myfile.write('MBH {0:2.2e}'.format(MBH)+'\n')
+			myfile.write('dsource {0:2.2e}'.format(dsource)+'\n')
+			myfile.write('M_unit '+str(Munit)+'\n')
+			myfile.write('trat_large '+str(Rhigh)+'\n')
+			myfile.write('nx '+str(npixel)+'\n')
+			myfile.write('ny '+str(npixel)+'\n')
+			myfile.write('fov '+str(fov)+'\n')
+			myfile.write('counterjet '+str(counterjet)+'\n')
+			myfile.write('rmax_geo '+str(rmax_geo)+'\n')
+			myfile.write('target_nturns '+str(target_nturns)+'\n')
+			myfile.write('positronRatio '+str(positronRatio)+'\n')
+			myfile.write('beta_crit '+str(beta_crit)+'\n')
+			myfile.write('beta_crit_coefficient '+str(beta_crit_coefficient)+'\n')
+			myfile.write('kappa_kappa '+str(kappa_slope)+'\n')
+			myfile.write('emission_type '+str(emission_type)+'\n')
+			myfile.write('electronModel '+str(electronModel)+'\n')
+			myfile.write('constant_beta_e0 '+str(constant_beta_e0)+'\n')
+			myfile.write('sigma_transition '+str(sigma_transition)+'\n')
+			myfile.write('sigma_cut '+str(sigma_cut)+'\n')
+			if trace:
+				myfile.write('trace '+str(trace)+'\n')
+				myfile.write('trace_i '+str(traceCoordinates[0])+'\n')
+				myfile.write('trace_j '+str(traceCoordinates[1])+'\n')
+				myfile.write('trace_outf '+trace_outf+'\n')
+
+		#Send command to shell.
+		command = ipoleExecutable+" -par " + parameterFileName
+		if unpol:
+			command += ' -unpol'
+		os.system(command)
+
+def ipole_many_models(Munitfile, dumpTimes=[None], frequencies=[230.0e9], inclinationAngles=[None], MBH=6.2e9, ipoleExecutable='../ipole_dev/ipole', \
+	npixel=640, outpath='../ipole_output/ipole_many_models/', clearOutputLocation=False, phicam=0, overwrite=False, fov=160, rmax_geo=50, parameterFileName='./runIPOLE.par', \
+	startingDirectoryName='grmhd_library', positronRatio=0, target_nturns=-1, dumpSamples=None, emission_type=4, kappa_slope=3.5, unpol=False, dsource=16.9e6):
+
+	startTime = time.time()
+
+	#Munitfile should have the dump file, Munit, Rhigh, and inclination angle
+	inputTable = np.atleast_2d(np.loadtxt(Munitfile, dtype=str))
+
+	if not os.path.isdir(outpath):
+		try:
+			os.system('mkdir '+outpath)
+		except:
+			raise NameError("The output path does not exist and could not be made to exist.")
+
+	#First, we're looping over models.
+	for model in range(inputTable.shape[0]):
+		fitDumpName = inputTable[model,0]
+		Munit = np.float(inputTable[model,1])
+		Rhigh = np.float(inputTable[model,2])
+		
+		#Decompose the dumpfile name and get properties.  Assuming a certain directory structure.
+		directories = fitDumpName.split('/')
+		startingDirectoryIndex = directories.index(startingDirectoryName)
+		magneticFieldType = directories[startingDirectoryIndex + 1]
+		spin = directories[startingDirectoryIndex + 2]
+
+		#Define model folder name.  Make it if it doesn't exist.
+		modelFolderName = magneticFieldType+'_'+spin+'_R'+str(Rhigh)+'/'
+		if not os.path.isdir(outpath+modelFolderName):
+			os.system('mkdir '+outpath+modelFolderName)
+
+		#Loop over inclination angles
+		for theta in inclinationAngles:
+			if theta is None:
+				usedTheta = np.float(inputTable[model,3])
+			else:
+				if 'a-' in spin:
+					#Flip the inclination angle
+					usedTheta = 180.0 - theta
+				else:
+					usedTheta = theta
+			#NOTE:  180 actually gets mapped to 90 somehow.
+			if usedTheta >= 180.0:
+				usedTheta = 180.0 - usedTheta
+
+			thetaName = 'inc{0:3.2f}/'.format(usedTheta)
+			if not os.path.isdir(outpath+modelFolderName+thetaName):
+				os.system('mkdir '+outpath+modelFolderName+thetaName)
+
+			#Loop over dump times
+			if dumpTimes is None:
+				if dumpSamples is None:
+					usedDumpTimes = [int(directories[-1].split('.')[0][-4:])]
+				else:
+					dumpRange = folderToDumpRange[fitDumpName[:-17]]
+					usedDumpTimes = np.linspace(dumpRange[0], dumpRange[1], dumpSamples).astype(int)
+			else:
+				usedDumpTimes = dumpTimes
+			for dumpTime in usedDumpTimes:
+				dumpName = 'dump{0:04}/'.format(int(dumpTime))
+				inputSimulationFile = fitDumpName[:-11] + '{0:08}'.format(int(dumpTime)) + '.h5'
+
+				if not os.path.isdir(outpath+modelFolderName+thetaName+dumpName):
+					os.system('mkdir '+outpath+modelFolderName+thetaName+dumpName)
+
+				#Loop over frequencies
+				for frequency in frequencies:
+					freqName = 'nu{0:3.6f}/'.format(frequency/1e9)
+					
+					if os.path.isdir(outpath+modelFolderName+thetaName+dumpName+freqName):
+						if clearOutputLocation:
+							os.system('rm '+outpath+modelFolderName+thetaName+dumpName+freqName+'*h5')
+							os.system('mkdir '+outpath+modelFolderName+thetaName+dumpName+freqName)
+					else:
+						os.system('mkdir '+outpath+modelFolderName+thetaName+dumpName+freqName)
+
+					outputFileName = outpath+modelFolderName+thetaName+dumpName+freqName+(modelFolderName+thetaName+dumpName+freqName).replace('/', '_')[:-1]+'.h5'
+					#Only run if this file doesn't already exist.
+					if not overwrite:
+						if os.path.isfile(outputFileName):
+							print(outputFileName + " already exists.  Skipping.")
+							continue
+					try:
+						assert os.path.isfile(inputSimulationFile)
+					except:
+						print("ERROR:  " + inputSimulationFile + " is not a file.  Check your specifications.")
+						continue
+					runIPOLE(inputSimulationFile, outputFileName, Munit, Rhigh=Rhigh, freq_Hz=frequency, MBH=MBH, npixel=npixel, ipoleExecutable=ipoleExecutable, \
+					thetacam=usedTheta, phicam=phicam, fov=fov, rmax_geo=rmax_geo, parameterFileName=parameterFileName, positronRatio=positronRatio, \
+					target_nturns=target_nturns, emission_type=emission_type, kappa_slope=kappa_slope, unpol=unpol, dsource=dsource)
+
+	endTime = time.time()
+	print ("Completed after {:3.2f} hours.".format((endTime-startTime)/3600) )#Added Parents () 5/26/2021
+
+if __name__ == '__main__':
+	MunitFile = './Munit_tables/Munit_table_kappa3.5_M87.txt'
+	dumpTimes = None
+	frequencies = [86e9,129e9]
+	#frequencies = [214.1e9,228.1e9]
+	#frequencies = [340e9,350e9]
+	inclinationAngles = [163.0]
+	npixel = 320
+	fov = 160
+	MBH = 6.2e9
+	parameterFileName = None
+	ipoleExecutable = '../ipole_versions/ipole_kappa/ipole'
+	startingDirectoryName = 'grmhd_library'
+	rmax_geo = 50
+	emission_type = 2   #Kappa turned on.
+	kappa_slope = 3.5
+	unpol = True
+
+	outpath = '../ipole_output/spectral_index_study_kappa3.5_041321/'
+	ipole_many_models(MunitFile, dumpTimes=dumpTimes, frequencies=frequencies, inclinationAngles=inclinationAngles, startingDirectoryName=startingDirectoryName, \
+	npixel=npixel, ipoleExecutable=ipoleExecutable, outpath=outpath, overwrite=False, fov=fov, MBH=MBH, rmax_geo=rmax_geo, parameterFileName=parameterFileName, \
+	emission_type=emission_type, dumpSamples=11, kappa_slope=kappa_slope, unpol=unpol)
+
+
+	kappa_slope = 5.0
+	MunitFile = './Munit_tables/Munit_table_kappa5.0_M87.txt'
+	outpath = '../ipole_output/spectral_index_study_kappa5.0_041321/'
+	ipole_many_models(MunitFile, dumpTimes=dumpTimes, frequencies=frequencies, inclinationAngles=inclinationAngles, startingDirectoryName=startingDirectoryName, \
+	npixel=npixel, ipoleExecutable=ipoleExecutable, outpath=outpath, overwrite=False, fov=fov, MBH=MBH, rmax_geo=rmax_geo, parameterFileName=parameterFileName, \
+	emission_type=emission_type, dumpSamples=11, kappa_slope=kappa_slope, unpol=unpol)
+
+
+	'''
+	outpath = '../ipole_output/models_to_260GHz/'
+	ipole_many_models(MunitFile, dumpTimes=dumpTimes, frequencies=frequencies, inclinationAngles=inclinationAngles, startingDirectoryName=startingDirectoryName, \
+	npixel=npixel, ipoleExecutable=ipoleExecutable, outpath=outpath, overwrite=False, fov=fov, MBH=MBH, rmax_geo=rmax_geo, parameterFileName=parameterFileName)
+	'''
+
+	'''
+	#Currently comparing two different rmax_geos.
+	outpath = '../ipole_output/tauF_paper8_studies_rmax30/'
+	rmax_geo = 30
+	ipole_many_models(MunitFile, dumpTimes=dumpTimes, frequencies=frequencies, inclinationAngles=inclinationAngles, startingDirectoryName=startingDirectoryName, \
+	npixel=npixel, ipoleExecutable=ipoleExecutable, outpath=outpath, overwrite=False, fov=fov, MBH=MBH, rmax_geo=rmax_geo, parameterFileName=parameterFileName)
+
+	#Currently comparing two different rmax_geos.
+	outpath = '../ipole_output/tauF_paper8_studies_rmax40/'
+	rmax_geo = 40
+	ipole_many_models(MunitFile, dumpTimes=dumpTimes, frequencies=frequencies, inclinationAngles=inclinationAngles, startingDirectoryName=startingDirectoryName, \
+	npixel=npixel, ipoleExecutable=ipoleExecutable, outpath=outpath, overwrite=False, fov=fov, MBH=MBH, rmax_geo=rmax_geo, parameterFileName=parameterFileName)
+	'''

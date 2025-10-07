@@ -1,0 +1,15 @@
+  adb0c14..7189f3d  feature/var-kappa -> origin/feature/var-kappa
+ * [new branch]      fix/initialize-memory -> origin/fix/initialize-memory
+ * [new branch]      fix/sign-zero -> origin/fix/sign-zero
+Updating 1d29e3f..d74f9b7
+Fast-forward
+ machines/eht.make       |  1 +
+ machines/frontera.make  | 15 +++++++++++++++
+ makefile                |  3 +++
+ model/iharm/example.par |  2 +-
+ model/iharm/model.c     |  4 ++--
+ src/ipolarray.c         | 91 +++++++++++++++++++++++++++++++++++---------------------------------------------------
+ src/model_tetrads.c     | 35 +++++++++++++++------------------
+ 7 files changed, 74 insertions(+), 77 deletions(-)
+ create mode 100644 machines/eht.make
+ create mode 100644 machines/frontera.make1;95;0c

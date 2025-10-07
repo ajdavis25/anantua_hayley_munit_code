@@ -1,0 +1,37 @@
+from ipole_many_models import runIPOLE
+import numpy as np
+  
+def makePositronImages(simFile, Munit, positronRatios=np.linspace(0,1,2), nameBase='../ipole_output/positron_test/positron_test.h5', inclination=163.0, Rhigh=20, freq_Hz=228e9, \
+    ipole='/n/home13/anantua/ipole/aricarte/ipole+e-/ipole',fov=160.0, npixel=320, counterjet=0, rmax_geo=20):
+
+    #For a single dump file, make images for a variety of positron ratios.
+    for positronRatio in positronRatios:
+        MunitOffset=5.0e+28 #1.2e+28  
+        MunitSlope=1.5e+1
+        MunitUsed = MunitOffset+ MunitSlope*Munit / (1. + 2.*positronRatio)#Optically Thin Approximation; 0.15positronRatio=ne+/(ne+ + ne-)?
+        #The positron ratio is put in the filename. MunitUsed = Munit / (1. + 2.*positronRatio); (FluxMax-FluxMin)/(listMax-listMin)=fpos
+        runIPOLE(simFile, nameBase.replace('.h5', '_{0:1.3f}.h5'.format(positronRatio)), MunitUsed, ipoleExecutable=ipole, thetacam=inclination, Rhigh=Rhigh, \
+                 freq_Hz=freq_Hz, fov=fov, npixel=npixel, counterjet=counterjet, rmax_geo=rmax_geo, positronRatio=positronRatio,beta_crit_coefficient=.5,constant_beta_e0=0.01,beta_crit=1,electronModel=2,sigma_transition=2.0,sigma_cut=2.0)#Can modify Munit by using MunitUsed; electron temp model by electronModel
+
+if __name__ == '__main__':
+#    simFile = '/n/holystore01/LABS/bhi/Lab/narayan_lab/grmhd_library/MAD/a+0.94/384x192x192_IHARM/dump_00002000.h5'
+#    Munit = 7.48745e+24
+#    Rhigh = 20
+#    nameBase = '/n/home13/anantua/ipole/aricarte/e+Output/positron_test_MAD.h5'
+#
+#    positronRatios = np.linspace(0,1,51)
+#    makePositronImages(simFile, Munit, positronRatios, Rhigh=Rhigh, nameBase=nameBase)
+
+    simFile ='/n/holystore01/LABS/bhi/Lab/narayan_lab/grmhd_library_v3/SANE/a-0.5/288x128x128_KHARMA/torus.out0.05000.h5'
+              # '/n/holystore01/LABS/bhi/Lab/narayan_lab/grmhd_library/SANE/a-0.5/288x128x128_IHARM/dump_00001500.h5'
+              # '/n/holystore01/LABS/bhi/Lab/narayan_lab/grmhd_library/SANE/a-0.5/288x128x128_IHARM/dump_00001500.h5'
+              # '/n/holystore01/LABS/bhi/Lab/narayan_lab/grmhd_library/SANE/a+0.94/288x128x128_IHARM/dump_00001500.h5' 
+              #'/n/holystore01/LABS/bhi/Lab/narayan_lab/grmhd_library/SANE/a+0.94/288x128x128_IHARM/dump_00002000.h5'
+    Munit = 1.82523e+27
+    Rhigh = 20
+    nameBase = '/n/home13/anantua/ipole/aricarte/e+Output/positron_test_SANEa-Pt5.h5'     
+             #'/n/home13/anantua/ipole/aricarte/e+Output/positron_test_SANEtorus_SigmaTransition1_SigmaCut2.h5'
+             #'../ipole_output/SANE_a+0.94_R20.0_positrons/positron_test.h5'
+
+    positronRatios = np.linspace(0,1,2)#np.linspace(0,1,51)
+    makePositronImages(simFile, Munit, positronRatios, Rhigh=Rhigh, nameBase=nameBase)

@@ -1,0 +1,2 @@
+                command += ' --positronRatio='+str(positronRatio)
+                command += ' --beta_crit='+str(beta_crit)

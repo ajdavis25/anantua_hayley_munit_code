@@ -1,0 +1,76 @@
+import os
+import numpy as np
+
+def runIPOLE_weird_plasmas(inputSimulationFile, outputFileName, Munit, Rhigh=20, freq_Hz=230e9, MBH=6.2e9, npixel=160, ipoleExecutable='../ipole_versions/ipole_weird_plasmas/ipole', \
+	thetacam=163.0, phicam=0.0, fov=160.0, rmax_geo=50, counterjet=0, positronRatio=0, \
+	beta_crit_coefficient=0.5, beta_crit=1, dsource=16.9e6, unpol=False, kappa_slope=5.0, trace=0, traceCoordinates=(0,0), trace_outf=None, \
+  	electronModel=2, constant_beta_e0=0.1):
+
+	"""
+	This function allows you to run IPOLE from within Python.  Not all of the free parameters are implemented in every version of IPOLE, and if they're not
+	useable by the ipoleExecutable, they will be ignored.
+	"""
+
+	if trace_outf==None:
+		#Change default name of trace file
+		trace_outf = outputFileName.replace('.h5', '_trace.h5')
+
+	#IPOLE can take all of the free parameters on the command line.
+	command = ipoleExecutable
+	if unpol:
+		command += ' -unpol'
+	command += ' --dump='+inputSimulationFile
+	command += ' --outfile='+outputFileName
+	command += ' --thetacam='+str(thetacam)
+	command += ' --phicam='+str(phicam)
+	command += ' --freqcgs='+str(freq_Hz)
+	command += ' --MBH={0:2.2e}'.format(MBH)
+	command += ' --dsource={0:2.2e}'.format(dsource)
+	command += ' --M_unit='+str(Munit)
+	command += ' --trat_large='+str(Rhigh)
+	command += ' --nx='+str(npixel)
+	command += ' --ny='+str(npixel)
+	command += ' --fov='+str(fov)
+	command += ' --counterjet='+str(counterjet)
+	command += ' --rmax_geo='+str(rmax_geo)
+	command += ' --positronRatio='+str(positronRatio)
+	command += ' --beta_crit='+str(beta_crit)
+	command += ' --beta_crit_coefficient='+str(beta_crit_coefficient)
+	command += ' --kappa_kappa='+str(kappa_slope)
+	command += ' --electronModel='+str(electronModel)
+	command += ' --constant_beta_e0='+str(constant_beta_e0)
+	if trace:
+		command += ' --trace='+str(trace)
+		command += ' --trace_i='+str(traceCoordinates[0])
+		command += ' --trace_j='+str(traceCoordinates[1])
+		command += ' --trace_outf='+trace_outf
+	print(command)
+	os.system(command) 
+
+def make_constant_beta_e0_images(simFile, Munit, constant_beta_e0_list=np.linspace(0,1,2), nameBase='test.h5', inclination=163.0, freq_Hz=228e9, \
+	ipole='../ipole_versions/ipole_weird_plasmas/ipole', fov=160.0, npixel=320, counterjet=0, rmax_geo=50, outputFolder='./constant_beta_e0_test/', \
+	electronModel=4):
+
+	if outputFolder[-1] != '/':
+		outputFolder += '/'
+
+	if not os.path.isdir(outputFolder):
+		os.system('mkdir '+outputFolder)
+
+	#For a single dump file, make images for a variety of positron ratios.
+	for constant_beta_e0 in constant_beta_e0_list:
+		#The positron ratio is put in the filename.
+		runIPOLE_weird_plasmas(simFile, outputFolder + nameBase.replace('.h5', '_{0:1.3f}.h5'.format(np.log10(constant_beta_e0))), Munit, ipoleExecutable=ipole, thetacam=inclination, \
+		freq_Hz=freq_Hz, fov=fov, npixel=npixel, counterjet=counterjet, rmax_geo=rmax_geo, constant_beta_e0=constant_beta_e0, electronModel=electronModel)
+
+if __name__ == '__main__':
+	simFile = '/n/holystore01/LABS/bhi/Lab/narayan_lab/grmhd_library/MAD/a+0.94/384x192x192_IHARM/dump_00002000.h5'
+	Munit = 7.48745e+24
+	ipole = '/n/home13/anantua/ipole/aricarte/ipole+e-/ipole' #'../ipole_versions/ipole_weird_plasmas/ipole'
+	outputFolder = '../ipole_output_constant_beta_e0/MAD_a+0.94_constant_beta_e0_test/'
+	nameBase = 'constant_beta_e0.h5'
+	constant_beta_e0_list = np.logspace(-3,0,20)#List of beta_e0 values   
+	constant_beta_e0_list = [1]#Overwrites list of beta_e0 values for testing
+
+	make_constant_beta_e0_images(simFile, Munit, constant_beta_e0_list, nameBase=nameBase, outputFolder=outputFolder,ipole=ipole)
+    

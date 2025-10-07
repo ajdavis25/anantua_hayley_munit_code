@@ -1,0 +1,157 @@
+import matplotlib#Comment in when QXcbConnection fails    
+matplotlib.use('Agg')#Comment in when QXcbConnection fails
+import matplotlib.pyplot as plt
+import os
+import numpy as np
+import h5py
+
+def folderToMovie(inFolder, outMovie, framerate=8, patternMatch="%*.png"):
+	if inFolder[-1] != '/':
+		inFolder += '/'
+	os.system("ffmpeg -y -framerate "+str(int(framerate))+" -i "+inFolder+patternMatch+" -s:v 1280x720 -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p "+outMovie)
+
+def colorbar(mappable):
+	""" the way matplotlib colorbar should have been implemented """
+	from mpl_toolkits.axes_grid1 import make_axes_locatable
+	ax = mappable.axes
+	fig = ax.figure
+	divider = make_axes_locatable(ax)
+	cax = divider.append_axes("right", size="5%", pad=0.05)
+	return fig.colorbar(mappable, cax=cax)
+
+def plotSnapshot(imageFile, intensityMax=None, cpMax=None, output=None, EVPA_CONV="EofN", fractionalCircular=True, xlim=[-40,40], ylim=[-40,40]):
+
+	#Open the IPOLE output and extract relevant data.
+	with h5py.File(imageFile, 'r') as hfp:
+		dx = hfp['header']['camera']['dx'][()]
+		dy = hfp['header']['camera']['dy'][()]
+		dsource = hfp['header']['dsource'][()]
+		lunit = hfp['header']['units']['L_unit'][()]
+		fov_muas = dx / dsource * lunit * 2.06265e11
+		scale = hfp['header']['scale'][()]
+		evpa_0 = 'W'
+		if 'evpa_0' in hfp['header']:
+		  evpa_0 = hfp['header']['evpa_0'][()]
+		unpol = np.copy(hfp['unpol']).transpose((1,0)) * scale
+		imagep = np.copy(hfp['pol']).transpose((1,0,2)) * scale
+		pixelSize = dx * dy * (lunit / dsource * 2.06265e11)**2 / (imagep.shape[0] * imagep.shape[1])
+		I = imagep[:,:,0] / pixelSize
+		Q = imagep[:,:,1] / pixelSize
+		U = imagep[:,:,2] / pixelSize
+		V = imagep[:,:,3] / pixelSize
+	extent = [ -fov_muas/2, fov_muas/2, -fov_muas/2, fov_muas/2 ]
+
+	if intensityMax is None:
+		intensityMax = np.max(I)
+	#Initialize a plot with two panels.
+	fig, axarr = plt.subplots(1, 2, figsize=(8,4))
+	ax1 = axarr[0]
+	ax2 = axarr[1]
+
+	#Total intensity and linear polarization ticks.
+	im1 = ax1.imshow(I, cmap='afmhot', vmin=0., vmax=intensityMax, origin='lower', extent=extent)
+	colorbar(im1)
+
+	#Circular polarization fraction
+	if fractionalCircular:
+		cpfrac = 100.*V/I
+		if cpMax is None:
+			cpMax = np.max(np.abs(cpfrac))
+
+		im2 = ax2.imshow(cpfrac, cmap='seismic', vmin=-cpMax, vmax=cpMax, origin='lower', extent=extent)
+		colorbar(im2)
+		ax2.set_title("CP [%]")
+	else:
+		if cpMax is None:
+			cpMax = np.max(np.abs(V))
+
+		im2 = ax2.imshow(V, cmap='seismic', vmin=-cpMax, vmax=cpMax, origin='lower', extent=extent)
+		colorbar(im2)
+		ax2.set_title("CP [Jy $\mu$as$^{-2}$]")
+
+	#evpa
+	evpa = (180./3.14159)*0.5*np.arctan2(U,Q)
+	if evpa_0 == "W":
+	  evpa += 90.
+	  evpa[evpa > 90.] -= 180.
+	if EVPA_CONV == "NofW":
+	  evpa += 90.
+	  evpa[evpa > 90.] -= 180.
+
+	#quiver on intensity
+	npix = I.shape[0]
+	xs = np.linspace(-fov_muas/2,fov_muas/2,npix)
+	Xs,Ys = np.meshgrid(xs,xs)
+	lpscal = np.max(np.sqrt(Q*Q+U*U))
+	vxp = np.sqrt(Q*Q+U*U)*np.sin(evpa*3.14159/180.)/lpscal
+	vyp = -np.sqrt(Q*Q+U*U)*np.cos(evpa*3.14159/180.)/lpscal
+	skip = int(npix/32 * (xlim[1]-xlim[0]) / 80)
+	ax1.quiver(Xs[::skip,::skip],Ys[::skip,::skip],vxp[::skip,::skip],vyp[::skip,::skip],
+	  headwidth=1, headlength=1,
+	  width=0.005,
+	  color='#00ff00',
+	  units='width',
+	  scale=4,
+	  pivot='mid')
+
+	#Formatting
+	ax1.set_title("Stokes I [Jy $\mu$as$^{-2}$]")
+	ax1.set_ylabel('$\mu$as')
+	ax1.set_xlabel('$\mu$as')
+	ax2.set_xlabel('$\mu$as')
+	for axis in [ax1,ax2]:
+		axis.set_aspect('equal')
+		axis.set_xlim(xlim)
+		axis.set_ylim(ylim)
+		axis.set_xticks(np.linspace(xlim[0],xlim[1],5))
+		axis.set_yticks(np.linspace(xlim[0],xlim[1],5))
+
+	#Label.  Note that constant_beta_e0 was included as part of the file name.  See some basic calculations here.
+	constant_beta_e0 = float(imageFile.split('_')[-1][:-3])
+	bbox = {'boxstyle': 'round', 'facecolor': 'wheat', 'alpha': 0.8}
+	ax2.text(0.05, 0.05, r'$\log_{10} \beta_{e,0}=$' + '{0:3.1f}'.format(constant_beta_e0), ha='left', va='bottom', transform=ax2.transAxes, fontsize=12, bbox=bbox)
+	ax2.text(0.05, 0.95, 'V/I = {0:1.2e}'.format(np.sum(V)/np.sum(I)), ha='left', va='top', transform=ax2.transAxes, fontsize=12, bbox=bbox)
+	ax1.text(0.05, 0.95, 'I={0:3.2f} Jy'.format(np.sum(I) * pixelSize), ha='left', va='top', transform=ax1.transAxes, fontsize=12, bbox=bbox)
+	ax1.text(0.05, 0.05, 'P/I={0:1.2e}'.format(np.sqrt(np.sum(Q)**2 + np.sum(U)**2)/np.sum(I)), ha='left', va='bottom', transform=ax1.transAxes, fontsize=12, bbox=bbox)
+
+	fig.tight_layout()
+	if output is None:
+		fig.show()
+	else:
+		fig.savefig(output)
+		plt.close(fig)
+
+def makeMovie(imageFolder, movieName, temporaryFolder='../images/frames/', fractionalCircular=True, cpMax=None, intensityMax=None, xlim=[-40,40], ylim=[-40,40]):
+
+	#Sanitize input by adding a slash to the end if necessary.
+	if imageFolder[-1] != '/':
+		imageFolder += '/'
+	if temporaryFolder[-1] != '/':
+		temporaryFolder += '/'
+
+	#WARNING:  Destroys all frames in the temporary folder.
+	os.system('rm '+temporaryFolder+'frame*png')
+
+	#In the image folder, there's a series of images which contain the constant_beta_e0 in the file name.  Interpret them.
+	listOfImages = os.listdir(imageFolder)
+	constant_beta_e0s = [float(imageFile.split('_')[-1][:-3]) for imageFile in listOfImages]
+	ordering = np.argsort(constant_beta_e0s)
+	listOfImages = [listOfImages[order] for order in ordering]
+
+	#Make a plot for each frame.
+	for frame in range(len(listOfImages)):
+
+		print ( 'Creating frame {0} of {1}.'.format(frame+1, len(listOfImages)) )
+		plotSnapshot(imageFolder + listOfImages[frame], output=temporaryFolder + 'frame{0:04}.png'.format(frame), \
+		fractionalCircular=fractionalCircular, cpMax=cpMax, intensityMax=intensityMax, xlim=xlim, ylim=ylim)
+
+#plotSnapshot('/n/home13/anantua/ipole/aricarte/ipole_output_constant_beta_e0/MAD_a+0.94_constant_beta_e0_test/constant_beta_e0_0.000.h5', cpMax=4e-6, intensityMax=0.0025, xlim=[-80,80], ylim=[-80,80], fractionalCircular=False)
+	#Convert the folder into a movie.
+	folderToMovie(temporaryFolder, movieName)
+
+if __name__ == '__main__':
+	#These are example commands that I used...
+	#plotSnapshot(
+#'../ipole_output/MAD_a+0.94_constant_beta_e0_test/constant_beta_e0_-3.000.h5'
+        plotSnapshot('/n/home13/anantua/ipole/aricarte/ipole_output_constant_beta_e0/MAD_a+0.94_constant_beta_e0_test/constant_beta_e0_0.000.h5', cpMax=4e-6, intensityMax=0.0025, xlim=[-80,80], ylim=[-80,80], fractionalCircular=False,output='/n/home13/anantua/ipole/aricarte/BetaE0Images/ConstBetaE0Image.png')
+	#makeMovie('../ipole_output/MAD_a+0.94_constant_beta_e0_test/', '../movies/constant_beta_e0_test.mp4', fractionalCircular=False, xlim=[-80,80], ylim=[-80,80])
