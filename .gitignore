@@ -42,3 +42,5 @@ figures/
 
 # Ignore specific user directories
 ipole/
+aricarte/aricarte-copy/PositronIPOLEScripts/ffmpeg/
+aricarte/gsl-1.16/
