@@ -4,10 +4,10 @@
 #SBATCH --error=/work/vmo703/logs/converge_%A_%a.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=8
-#SBATCH --time=48:00:00
-#SBATCH --partition=compute2,compute3
-#SBATCH --array=0-11
+#SBATCH --cpus-per-task=80
+#SBATCH --time=7-00:00:00
+#SBATCH --partition=compute2
+#SBATCH --array=0-11%10
 
 # Load your Python venv
 source /work/vmo703/ipole_venv/bin/activate
