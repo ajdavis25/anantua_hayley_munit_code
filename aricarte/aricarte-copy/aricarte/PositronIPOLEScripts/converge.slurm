@@ -7,13 +7,13 @@
 #SBATCH --cpus-per-task=80
 #SBATCH --time=7-00:00:00
 #SBATCH --partition=compute2
-#SBATCH --array=0-11%10
+#SBATCH --array=0-41%10
 
 # Load your Python venv
 source /work/vmo703/ipole_venv/bin/activate
 
 # Path to your CSV
-CSV=/work/vmo703/data/example.csv
+CSV=/work/vmo703/data/test_example.csv
 
 # Figure out row count (skip 1 header rows)
 NROWS=$(($(wc -l < $CSV) - 1))

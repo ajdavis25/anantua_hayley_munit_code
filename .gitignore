@@ -22,6 +22,7 @@ ipole_venv/
 *.code-workspace
 
 # Mac and Linux system files
+*.zip
 .DS_Store
 *.swp
 
