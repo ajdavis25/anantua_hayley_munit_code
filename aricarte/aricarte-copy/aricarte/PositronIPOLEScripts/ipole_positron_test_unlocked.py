@@ -38,7 +38,8 @@ def run_from_csv(csv_path,
         if pd.isna(row["model"]) or pd.isna(row["Munit"]):
             continue
 
-        timestep = int(row["timestep"])
+        # note: dump_index corresponds to timestep: dump_index = timestep / 5
+        timestep = int(row["dump_index"])
         model = str(row["model"]).upper()
         spin = str(row["spin"])
         positron_frac = int(row["pos"])
@@ -54,7 +55,7 @@ def run_from_csv(csv_path,
         elif mad_sane == "SANE":
             prefix = "Sa"
         else:
-            raise ValueError(f"Unknown MAD/SANE value: {mad_sane}")
+            raise ValueError(f"unknown MAD/SANE value: {mad_sane}")
 
         simFile = Path(sim_dir) / f"{prefix}{spin}_{timestep}.h5"
         if not simFile.exists():
