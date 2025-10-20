@@ -11,7 +11,7 @@ except AttributeError:
 # helper functions for bracket + bisection flux solving
 def _run_ipole_once(simFile, nameBase, MunitUsed, fpos, ipole, inclination, Rhigh, freq_Hz, fov, npixel,
                     counterjet, rmax_geo, electronModel, sigma_transition, sigma_cut):
-    """Run ipole once and parse flux (Jy)."""
+    """run ipole once and parse flux (Jy)"""
     print(f"bisect: runIPOLE(sim={simFile}, MunitUsed={MunitUsed:.3e}, fpos={fpos})", flush=True)
     result = subprocess.run(
         [
