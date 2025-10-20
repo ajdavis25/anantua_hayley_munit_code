@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, re, h5py
+import re, h5py
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
