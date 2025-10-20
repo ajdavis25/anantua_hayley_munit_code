@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=80
 #SBATCH --time=7-00:00:00
 #SBATCH --partition=compute2
-#SBATCH --array=0-41%10
+#SBATCH --array=0-40%10
 
 # Load your Python venv
 source /work/vmo703/ipole_venv/bin/activate
