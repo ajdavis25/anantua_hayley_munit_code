@@ -7,21 +7,21 @@
 #SBATCH --cpus-per-task=80
 #SBATCH --time=7-00:00:00
 #SBATCH --partition=compute2
-#SBATCH --array=0-40%10
+#SBATCH --array=0-1%10
 
-# Load your Python venv
+# load your python venv
 source /work/vmo703/ipole_venv/bin/activate
 
-# Path to your CSV
-CSV=/work/vmo703/data/test_example.csv
+# path to your csv
+CSV=/work/vmo703/data/test_csv.csv
 
-# Figure out row count (skip 1 header rows)
+# figure out row count (skip 1 header rows)
 NROWS=$(($(wc -l < $CSV) - 1))
 
-# Set threads to match allocated cores
+# set threads to match allocated cores
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
-echo "Running row $SLURM_ARRAY_TASK_ID out of $NROWS"
+echo "running row $SLURM_ARRAY_TASK_ID out of $NROWS"
 
-# Run Python with row index
-python /work/vmo703/aricarte/aricarte-copy/aricarte/PositronIPOLEScripts/shaum_munit_finder.py --start_row $SLURM_ARRAY_TASK_ID
+# run python with row index
+python /work/vmo703/aricarte/aricarte-copy/aricarte/PositronIPOLEScripts/auto_munit_finder.py --start_row $SLURM_ARRAY_TASK_ID

@@ -231,7 +231,7 @@ if __name__ == '__main__':
     print(f"processing row {start_row}", flush=True)
 
     MunitOffset_guess, MunitSlope_guess = 5e24, 3.0
-    params = pd.read_csv('/work/vmo703/data/test_example.csv', engine='python', encoding='utf-8-sig').rename(columns=str.strip)
+    params = pd.read_csv('/work/vmo703/data/test_csv.csv', engine='python', encoding='utf-8-sig').rename(columns=str.strip)
     print("loaded columns:", list(params.columns), flush=True)
 
     model_dict = {'RBETA':[2,2.0],'RBETAwJET':[2,0.5],'CRITBETA':[4,2.0],'CRITBETAwJET':[4,0.5]}
