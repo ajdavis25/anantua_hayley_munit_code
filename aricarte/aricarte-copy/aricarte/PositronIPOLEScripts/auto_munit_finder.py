@@ -2,6 +2,14 @@ import sys, io, os, re, argparse, subprocess, math
 import numpy as np, pandas as pd
 from ipole_many_models import runIPOLE
 
+"""
+uses a bracketing + bisection method to automatically tune the Munit scaling
+so that IPOLE runs produce a target flux (~0.5 Jy) for each positron ratio.
+
+once the correct MunitUsed values are found for pos0 and pos1, it solves for
+the corresponding MunitOffset and MunitSlope parameters and saves them to CSV.
+"""
+
 # ensure real-time output in SLURM logs
 try:
     sys.stdout.reconfigure(line_buffering=True)
@@ -215,7 +223,7 @@ def makePositronImages(
     pd.DataFrame({
         'Row': [row], 'MunitOffset_guess': [MunitOffset_guess], 'MunitSlope_guess': [MunitSlope_guess]
     }).to_csv(
-        'converged_parameters.csv', mode='a',
+        'converged_parameters.csv', mode='w',
         header=not os.path.exists('converged_parameters.csv'), index=False
     )
     print(f"saved converged parameters after {iterations} iterations for row {row}", flush=True)
