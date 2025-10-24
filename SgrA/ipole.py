@@ -2,7 +2,12 @@ import sys, pandas as pd
 from pathlib import Path
 from ipole_many_models import runIPOLE
 
-
+"""
+model presets: electron-heating parameterizations
+RBETA -> continuous beta scaling
+CRITBETA -> threshold beta critical
+WJET variants = milder sigma-transition, allowing jet contribution
+"""
 model_settings = {
     "RBETA":        {"electronModel": 2, "sigma_transition": 2.0},
     "RBETAWJET":    {"electronModel": 2, "sigma_transition": 1.0},
@@ -12,18 +17,19 @@ model_settings = {
 
 
 def compute_munit_used(Munit, MunitOffset, MunitSlope, positron_frac):
+    # new target flux for sgr a*: 2.4 Jy
     return MunitOffset + (MunitSlope * Munit) / (1.0 + 2.0 * positron_frac)
 
 
 def run_from_csv(csv_path,
                  sim_dir="/work/vmo703/grmhd_dump_samples",
-                 out_dir="/work/vmo703/ipole_outputs/M87",
+                 out_dir="/work/vmo703/ipole_outputs/sgrA",
                  ipole_exec="/work/vmo703/aricarte/run_ipole.sh",
-                 inclination=163.0,
-                 Rhigh=20,
-                 freq_Hz=228e9,
-                 fov=160.0,
-                 npixel=320,
+                 inclination=20.0, # 20-90 degrees (sgr a* orientation uncertain; jetless)
+                 Rhigh=20, # maybe test 10-40 later
+                 freq_Hz=228e9, # or 86e9 for multiband test
+                 fov=160.0, # in microarcseconds; ring ~50μas for sgr a*
+                 npixel=320, # can i reduce to 256 for faster runs?
                  counterjet=0,
                  rmax_geo=50,
                  row_index=None):
@@ -42,7 +48,7 @@ def run_from_csv(csv_path,
         timestep = int(row["dump_index"])
         model = str(row["model"]).upper()
         spin = str(row["spin"])
-        positron_frac = int(row["pos"])
+        positron_frac = 0
 
         Munit = float(row["Munit"])
         MunitOffset = float(row["MunitOffset"])
@@ -69,7 +75,7 @@ def run_from_csv(csv_path,
         runIPOLE(
             str(simFile),
             str(nameBase),
-            MunitUsed,
+            MunitUsed, # density scale -> return for 2.4 Jy
             ipoleExecutable=ipole_exec,
             thetacam=inclination,
             Rhigh=Rhigh,
@@ -84,7 +90,7 @@ def run_from_csv(csv_path,
             beta_crit=1,
             electronModel=model_settings[model]["electronModel"],
             sigma_transition=model_settings[model]["sigma_transition"],
-            sigma_cut=2.0,
+            sigma_cut=2.0, # maybe lower to 1.5 for sgr a* later (less jet)
         )
 
 
