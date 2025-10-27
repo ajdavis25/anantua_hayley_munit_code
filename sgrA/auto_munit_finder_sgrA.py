@@ -2,10 +2,10 @@
 """
 auto_munit_finder_sgrA.py
 -------------------------
-Automatically tunes Munit scaling so IPOLE runs produce the target flux (~2.4 Jy)
+automatically tunes Munit scaling so IPOLE runs produce the target flux (~2.4 Jy)
 for Sgr A* models, given a GRMHD dump and electron-heating prescription.
 
-Outputs a CSV with:
+outputs a CSV with:
 dump_index,timestep,MAD/SANE,model,spin,pos,MunitOffset,MunitSlope,Munit,MunitUsed,notes
 """
 
@@ -26,7 +26,7 @@ except AttributeError:
 def _run_ipole_once(simFile, nameBase, MunitUsed, fpos, ipole, inclination,
                     Rhigh, freq_Hz, fov, npixel, counterjet, rmax_geo,
                     electronModel, sigma_transition, sigma_cut, retries=1):
-    """Run IPOLE once and parse flux (Jy) from stdout, retrying if parsing fails."""
+    """run IPOLE once and parse flux (Jy) from stdout, retrying if parsing fails."""
     for attempt in range(retries + 1):
         print(f"[bisect] runIPOLE(sim={simFile}, MunitUsed={MunitUsed:.3e}, fpos={fpos}) (try {attempt+1}/{retries+1})", flush=True)
         result = subprocess.run(
@@ -141,8 +141,8 @@ def makeMunitForSgrA(simFile, dump_index, timestep, evolution, model, spin,
                      ipole="/work/vmo703/aricarte/run_ipole.sh", fov=160.0,
                      npixel=320, counterjet=0, rmax_geo=50, electronModel=2,
                      sigma_transition=2.0, sigma_cut=2.0, row=0):
-    """Run Munit calibration for one simulation row."""
-    print(f"[ROWSTART] row={row} simFile={simFile}", flush=True)
+    """run Munit calibration for one simulation row."""
+    print(f"[row start] row={row} simFile={simFile}", flush=True)
     target_flux = 2.4  # Jy
     fpos = 0.0         # no positrons for Sgr A*
 

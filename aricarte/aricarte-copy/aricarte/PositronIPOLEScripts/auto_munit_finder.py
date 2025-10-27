@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import sys, io, os, re, argparse, subprocess, math
 import numpy as np, pandas as pd
 from ipole_many_models import runIPOLE
@@ -38,16 +39,21 @@ def _run_ipole_once(simFile, nameBase, MunitUsed, fpos, ipole, inclination, Rhig
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
     )
     text = result.stdout + "\n" + result.stderr
-    m = re.search(r'I,Q,U,V \[Jy\]:\s+([\d.\-eE]+)', text)
+
+    # 1) prefer the explicit total flux line
+    m = re.findall(r'Ftot:\s*([+\-]?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)\s*Jy', text)
     if m:
-        flux = float(m.group(1))
-        print(f"bisect: parsed flux={flux:.6g} Jy (old format)", flush=True)
+        flux = float(m[-1])  # take the last occurrence
+        print(f"bisect: parsed flux={flux:.6g} Jy (Ftot)", flush=True)
         return flux
-    m = re.search(r'Ftot:\s+([\d.\-eE]+)\s+Jy', text)
+
+    # 2) fallback: parse the last "I,Q,U,V [Jy]:" occurrence and take I
+    m = re.findall(r'I,Q,U,V\s*\[Jy\]\s*:\s*([+\-]?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)', text)
     if m:
-        flux = float(m.group(1))
-        print(f"bisect: parsed flux={flux:.6g} Jy (Ftot format)", flush=True)
+        flux = float(m[-1])  # take the last occurrence
+        print(f"bisect: parsed flux={flux:.6g} Jy (I from IQUV)", flush=True)
         return flux
+
     print("bisect: WARN could not parse flux; raw output follows\n" + text, flush=True)
     return None
 
@@ -107,8 +113,36 @@ def _bracket_and_bisect_to_flux(simFile, nameBase, fpos, target_flux, init_Munit
                 break
             M, F = M_dn, F_dn
 
+    # ---- after establishing (lo_M, lo_F) and (hi_M, hi_F) ----
+    # ensure the bracket contains the target: (lo_F - T)*(hi_F - T) <= 0
+    T = target_flux
     if lo_M is None or hi_M is None:
         print("bisect: FAIL — could not bracket target flux.", flush=True)
+        return None, None
+
+    # try to fix a bad bracket (both below or both above target)
+    tries = 0
+    while (lo_F - T) * (hi_F - T) > 0 and tries < 8:
+        if lo_F < T and hi_F < T:
+            # both too faint -> expand upward
+            hi_M *= 10.0
+            hi_F = _run_ipole_once(simFile, nameBase, hi_M, fpos, ipole, inclination, Rhigh,
+                                   freq_Hz, fov, npixel, counterjet, rmax_geo,
+                                   electronModel, sigma_transition, sigma_cut)
+            print(f"bisect: expanding up: hi_M={hi_M:.3e}, hi_F={hi_F:.3g}", flush=True)
+        elif lo_F > T and hi_F > T:
+            # both too bright -> expand downward
+            lo_M /= 10.0
+            if lo_M <= 0:
+                break
+            lo_F = _run_ipole_once(simFile, nameBase, lo_M, fpos, ipole, inclination, Rhigh,
+                                   freq_Hz, fov, npixel, counterjet, rmax_geo,
+                                   electronModel, sigma_transition, sigma_cut)
+            print(f"bisect: expanding down: lo_M={lo_M:.3e}, lo_F={lo_F:.3g}", flush=True)
+        tries += 1
+
+    if (lo_F - T) * (hi_F - T) > 0:
+        print("bisect: FAIL — target not bracketed after expansion.", flush=True)
         return None, None
 
     # auto expand bracket if too faint
@@ -126,7 +160,7 @@ def _bracket_and_bisect_to_flux(simFile, nameBase, fpos, target_flux, init_Munit
             print(f"bisect: FAIL — flux never reached target even at hi_M={hi_M:.2e}", flush=True)
             return None, None
 
-    # Bisection phase
+    # bisection phase
     for _ in range(max_bisect_steps):
         mid_M = math.sqrt(lo_M * hi_M)
         mid_F = _run_ipole_once(simFile, nameBase, mid_M, fpos, ipole, inclination, Rhigh,
@@ -165,11 +199,11 @@ def makePositronImages(
     init1 = MunitOffset_guess + MunitSlope_guess*Munit/denom1
     print(f"bisect: anchors fpos0={init0:.3e}, fpos1={init1:.3e}", flush=True)
 
-    M0_star, F0_star = _bracket_and_bisect_to_flux(
+    M0_star, _ = _bracket_and_bisect_to_flux(
         simFile, nameBase, 0.0, target_flux, init0, ipole, inclination,
         Rhigh, freq_Hz, fov, npixel, counterjet, rmax_geo,
         electronModel, sigma_transition, sigma_cut, use_relative_tol=True)
-    M1_star, F1_star = _bracket_and_bisect_to_flux(
+    M1_star, _ = _bracket_and_bisect_to_flux(
         simFile, nameBase, 1.0, target_flux, init1, ipole, inclination,
         Rhigh, freq_Hz, fov, npixel, counterjet, rmax_geo,
         electronModel, sigma_transition, sigma_cut, use_relative_tol=True)
@@ -256,6 +290,7 @@ def makePositronImages(
     print(f"saved converged parameters after {iterations} iterations for row {row}", flush=True)
 
 
+# main entry point
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run ipole positron optimization')
     parser.add_argument('--start_row', '-start_row', type=int, default=None)
@@ -289,3 +324,4 @@ if __name__ == '__main__':
                        nameBase=nameBase, Rhigh=Rhigh, electronModel=electronModel,
                        sigma_cut=sigma_cut, sigma_transition=2.0, row=start_row,
                        ipole='/work/vmo703/aricarte/run_ipole.sh')
+    
