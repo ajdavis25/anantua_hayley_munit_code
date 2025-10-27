@@ -55,19 +55,31 @@ def _run_ipole_once(simFile, nameBase, MunitUsed, fpos, ipole, inclination, Rhig
 def _bracket_and_bisect_to_flux(simFile, nameBase, fpos, target_flux, init_MunitUsed,
                                 ipole, inclination, Rhigh, freq_Hz, fov, npixel,
                                 counterjet, rmax_geo, electronModel, sigma_transition, sigma_cut,
-                                max_bracket_steps=12, max_bisect_steps=20, tol=0.05):
-    """find MunitUsed giving ~target_flux Jy by geometric bracketing + bisection"""
+                                max_bracket_steps=12, max_bisect_steps=20,
+                                tol=0.05, use_relative_tol=True):
+    """
+    find MunitUsed giving ~target_flux Jy by geometric bracketing + bisection.
+    if use_relative_tol=True, tol is treated as a fractional tolerance (e.g. 0.05 = 5%).
+    otherwise, tol is an absolute difference in Jy.
+    """
     f0 = _run_ipole_once(simFile, nameBase, init_MunitUsed, fpos, ipole, inclination, Rhigh,
                          freq_Hz, fov, npixel, counterjet, rmax_geo,
                          electronModel, sigma_transition, sigma_cut)
     if f0 is None:
         return None, None
-    if abs(f0 - target_flux) <= tol:
+
+    def is_within_tolerance(F):
+        return abs(F - target_flux) / target_flux <= tol if use_relative_tol else abs(F - target_flux) <= tol
+
+    if is_within_tolerance(f0):
+        print(f"bisect: initial guess already within tolerance "
+              f"({'rel' if use_relative_tol else 'abs'} {tol:.2g}) — F={f0:.3g}", flush=True)
         return init_MunitUsed, f0
 
-    lo_M, hi_M = None, None
-    lo_F, hi_F = None, None
+    lo_M, hi_M, lo_F, hi_F = None, None, None, None
     M, F = init_MunitUsed, f0
+
+    # Bracketing phase
     if F < target_flux:
         for _ in range(max_bracket_steps):
             M_up = M * 3.0
@@ -96,9 +108,25 @@ def _bracket_and_bisect_to_flux(simFile, nameBase, fpos, target_flux, init_Munit
             M, F = M_dn, F_dn
 
     if lo_M is None or hi_M is None:
-        print("bisect: FAIL could not bracket target flux.", flush=True)
+        print("bisect: FAIL — could not bracket target flux.", flush=True)
         return None, None
 
+    # auto expand bracket if too faint
+    if hi_F < target_flux * 0.1:
+        print(f"bisect: flux plateau too faint (hi_F={hi_F:.3g} Jy); expanding upward...", flush=True)
+        safety_iter = 0
+        while hi_F < target_flux * 0.1 and safety_iter < 5:
+            hi_M *= 10
+            hi_F = _run_ipole_once(simFile, nameBase, hi_M, fpos, ipole, inclination, Rhigh,
+                                   freq_Hz, fov, npixel, counterjet, rmax_geo,
+                                   electronModel, sigma_transition, sigma_cut)
+            print(f"bisect: expanded hi_M={hi_M:.2e}, hi_F={hi_F:.3g} Jy", flush=True)
+            safety_iter += 1
+        if hi_F < target_flux * 0.1:
+            print(f"bisect: FAIL — flux never reached target even at hi_M={hi_M:.2e}", flush=True)
+            return None, None
+
+    # Bisection phase
     for _ in range(max_bisect_steps):
         mid_M = math.sqrt(lo_M * hi_M)
         mid_F = _run_ipole_once(simFile, nameBase, mid_M, fpos, ipole, inclination, Rhigh,
@@ -106,18 +134,18 @@ def _bracket_and_bisect_to_flux(simFile, nameBase, fpos, target_flux, init_Munit
                                 electronModel, sigma_transition, sigma_cut)
         if mid_F is None:
             return None, None
-        if abs(mid_F - target_flux) / target_flux <= tol:
-            print(f"bisect: success M*={mid_M:.3e}, F*={mid_F:.4g}", flush=True)
+        if is_within_tolerance(mid_F):
+            print(f"bisect: success M*={mid_M:.3e}, F*={mid_F:.4g} "
+                  f"(within {'{:.1%}'.format(tol) if use_relative_tol else tol} tolerance)", flush=True)
             return mid_M, mid_F
         if mid_F < target_flux:
             lo_M, lo_F = mid_M, mid_F
         else:
             hi_M, hi_F = mid_M, mid_F
 
-    if abs(lo_F - target_flux) < abs(hi_F - target_flux):
-        return lo_M, lo_F
-    else:
-        return hi_M, hi_F
+    final_M, final_F = (lo_M, lo_F) if abs(lo_F - target_flux) < abs(hi_F - target_flux) else (hi_M, hi_F)
+    print(f"bisect: reached max iterations — returning M={final_M:.3e}, F={final_F:.3g}", flush=True)
+    return final_M, final_F
 
 
 # main positron tuning function
@@ -131,7 +159,6 @@ def makePositronImages(
 ):
     print(f"ROWSTART: row={row} simFile={simFile} Rhigh={Rhigh}", flush=True)
 
-    # bracket & bisect for anchor solve
     target_flux = 0.5
     denom0, denom1 = (1 + 2*0.0), (1 + 2*1.0)
     init0 = MunitOffset_guess + MunitSlope_guess*Munit/denom0
@@ -141,11 +168,11 @@ def makePositronImages(
     M0_star, F0_star = _bracket_and_bisect_to_flux(
         simFile, nameBase, 0.0, target_flux, init0, ipole, inclination,
         Rhigh, freq_Hz, fov, npixel, counterjet, rmax_geo,
-        electronModel, sigma_transition, sigma_cut)
+        electronModel, sigma_transition, sigma_cut, use_relative_tol=True)
     M1_star, F1_star = _bracket_and_bisect_to_flux(
         simFile, nameBase, 1.0, target_flux, init1, ipole, inclination,
         Rhigh, freq_Hz, fov, npixel, counterjet, rmax_geo,
-        electronModel, sigma_transition, sigma_cut)
+        electronModel, sigma_transition, sigma_cut, use_relative_tol=True)
 
     if M0_star and M1_star:
         denom_diff = (1/denom0 - 1/denom1)
@@ -229,7 +256,6 @@ def makePositronImages(
     print(f"saved converged parameters after {iterations} iterations for row {row}", flush=True)
 
 
-# main entry point
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run ipole positron optimization')
     parser.add_argument('--start_row', '-start_row', type=int, default=None)
