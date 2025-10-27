@@ -70,7 +70,7 @@ def _bracket_and_bisect_to_flux(simFile, nameBase, fpos, target_flux, init_Munit
     M, F = init_MunitUsed, f0
     if F < target_flux:
         for _ in range(max_bracket_steps):
-            M_up = M * 10.0
+            M_up = M * 3.0
             F_up = _run_ipole_once(simFile, nameBase, M_up, fpos, ipole, inclination, Rhigh,
                                    freq_Hz, fov, npixel, counterjet, rmax_geo,
                                    electronModel, sigma_transition, sigma_cut)
@@ -106,7 +106,7 @@ def _bracket_and_bisect_to_flux(simFile, nameBase, fpos, target_flux, init_Munit
                                 electronModel, sigma_transition, sigma_cut)
         if mid_F is None:
             return None, None
-        if abs(mid_F - target_flux) <= tol:
+        if abs(mid_F - target_flux) / target_flux <= tol:
             print(f"bisect: success M*={mid_M:.3e}, F*={mid_F:.4g}", flush=True)
             return mid_M, mid_F
         if mid_F < target_flux:
@@ -239,7 +239,7 @@ if __name__ == '__main__':
     print(f"processing row {start_row}", flush=True)
 
     MunitOffset_guess, MunitSlope_guess = 5e24, 3.0
-    params = pd.read_csv('/work/vmo703/data/test_csv.csv', engine='python', encoding='utf-8-sig').rename(columns=str.strip)
+    params = pd.read_csv('/work/vmo703/data/audit.csv', engine='python', encoding='utf-8-sig').rename(columns=str.strip)
     print("loaded columns:", list(params.columns), flush=True)
 
     model_dict = {'RBETA':[2,2.0],'RBETAwJET':[2,0.5],'CRITBETA':[4,2.0],'CRITBETAwJET':[4,0.5]}

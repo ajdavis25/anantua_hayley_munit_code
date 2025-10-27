@@ -151,6 +151,20 @@ def plotPositronTestFrame(imageFile, intensityMax=3e-3, cpMax=1e-2, output=None,
     fig.savefig(output or imageFile.replace(".h5",".png"))
 
 
+# handle .h5 files in the root_dir itself
+for h5_file in root_dir.glob("*.h5"):
+    try:
+        print(f"processing {h5_file}...")
+        plotPositronTestFrame(
+            str(h5_file),
+            cpMax=0.1,
+            fractionalCircular=False
+        )
+    except Exception as e:
+        print(f"failed to process {h5_file.name}: {e}")
+
+
+# then handle subdirs
 for subdir in root_dir.iterdir():
     if not subdir.is_dir():
         continue
