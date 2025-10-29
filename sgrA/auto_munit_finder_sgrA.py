@@ -67,7 +67,7 @@ def _bracket_and_bisect_to_flux(simFile, nameBase, fpos, target_flux, init_Munit
                                 ipole, inclination, Rhigh, freq_Hz, fov, npixel,
                                 counterjet, rmax_geo, electronModel, sigma_transition, sigma_cut,
                                 max_bracket_steps=12, max_bisect_steps=20, tol=0.05):
-    """Find MunitUsed that produces the target flux using geometric bracketing + bisection."""
+    """find MunitUsed that produces the target flux using geometric bracketing + bisection."""
     f0 = _run_ipole_once(simFile, nameBase, init_MunitUsed, fpos, ipole, inclination,
                          Rhigh, freq_Hz, fov, npixel, counterjet, rmax_geo,
                          electronModel, sigma_transition, sigma_cut)

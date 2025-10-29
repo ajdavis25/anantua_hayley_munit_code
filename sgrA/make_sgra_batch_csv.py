@@ -2,7 +2,7 @@
 """
 make_sgra_batch_csv.py
 ----------------------
-Scans /work/vmo703/grmhd_dump_samples/ and generates a CSV listing
+scans /work/vmo703/grmhd_dump_samples/ and generates a CSV listing
 all available timesteps for MAD/SANE and both spin signs, expanded
 over the four electron-heating models.
 """

@@ -8,6 +8,7 @@ RBETA -> continuous beta scaling
 CRITBETA -> threshold beta critical
 WJET variants = milder sigma-transition, allowing jet contribution
 """
+
 model_settings = {
     "RBETA":        {"electronModel": 2, "sigma_transition": 2.0},
     "RBETAWJET":    {"electronModel": 2, "sigma_transition": 1.0},
@@ -25,20 +26,20 @@ def run_from_csv(csv_path,
                  sim_dir="/work/vmo703/grmhd_dump_samples",
                  out_dir="/work/vmo703/ipole_outputs/sgrA",
                  ipole_exec="/work/vmo703/aricarte/run_ipole.sh",
-                 inclination=20.0, # 20-90 degrees (sgr a* orientation uncertain; jetless)
-                 Rhigh=20, # maybe test 10-40 later
-                 freq_Hz=228e9, # or 86e9 for multiband test
-                 fov=160.0, # in microarcseconds; ring ~50μas for sgr a*
-                 npixel=320, # can i reduce to 256 for faster runs?
+                 inclination=20.0,  # 20-90 degrees (sgr a* orientation uncertain; jetless)
+                 Rhigh=20,  # maybe test 10-40 later
+                 freq_Hz=228e9,  # or 86e9 for multiband test
+                 fov=160.0,  # in microarcseconds; ring ~50μas for sgr a*
+                 npixel=320,  # can i reduce to 256 for faster runs?
                  counterjet=0,
                  rmax_geo=50,
                  row_index=None):
     df = pd.read_csv(csv_path, skiprows=0)
-    df.columns = df.columns.str.strip() # clean up spaces in headers
+    df.columns = df.columns.str.strip()  # clean up spaces in headers
 
     if row_index is not None:
         row = df.iloc[int(row_index)]
-        df = pd.DataFrame([row]) # single-row DataFrame
+        df = pd.DataFrame([row])  # single-row DataFrame
 
     for _, row in df.iterrows():
         if pd.isna(row["model"]) or pd.isna(row["Munit"]):
@@ -75,7 +76,7 @@ def run_from_csv(csv_path,
         runIPOLE(
             str(simFile),
             str(nameBase),
-            MunitUsed, # density scale -> return for 2.4 Jy
+            MunitUsed,  # density scale -> return for 2.4 Jy
             ipoleExecutable=ipole_exec,
             thetacam=inclination,
             Rhigh=Rhigh,
@@ -90,7 +91,7 @@ def run_from_csv(csv_path,
             beta_crit=1,
             electronModel=model_settings[model]["electronModel"],
             sigma_transition=model_settings[model]["sigma_transition"],
-            sigma_cut=2.0, # maybe lower to 1.5 for sgr a* later (less jet)
+            sigma_cut=2.0,  # maybe lower to 1.5 for sgr a* later (less jet)
         )
 
 

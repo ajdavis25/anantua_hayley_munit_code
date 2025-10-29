@@ -55,7 +55,7 @@ def colorbar(mappable):
 
 def plotPositronTestFrame(imageFile, intensityMax=3e-3, cpMax=1e-2, output=None, EVPA_CONV="EofN", fractionalCircular=True):
 
-    #Open the IPOLE output and extract relevant data.
+    # open the IPOLE output and extract relevant data.
     
     with h5py.File(imageFile, 'r') as hfp:
         dx = hfp['header']['camera']['dx'][()]
@@ -74,23 +74,23 @@ def plotPositronTestFrame(imageFile, intensityMax=3e-3, cpMax=1e-2, output=None,
         Q = imagep[:,:,1] / pixelSize
         U = imagep[:,:,2] / pixelSize
         V = imagep[:,:,3] / pixelSize
-        fov_muas = 1*fov_muas # Find 86GHz FoV, 230GHz FoV in ipole_positron_Test_unlocked.py; Increasing fov_muas here zooms in                                         
+        fov_muas = 1*fov_muas  # find 86GHz FoV, 230GHz FoV in ipole_positron_Test_unlocked.py; Increasing fov_muas here zooms in                                         
     extent = [ -1*fov_muas/2, 1*fov_muas/2, -1*fov_muas/2, 1*fov_muas/2 ]
 
-    #Initialize a plot with two panels.
+    # initialize a plot with two panels.
     fig, axarr = plt.subplots(1, 2, figsize=(8,4))
     ax1 = axarr[0]
     ax2 = axarr[1]
 
-    #Total intensity and linear polarization ticks.
-    #Is = np.sum(I)
-    im1 = ax1.imshow(I, cmap='afmhot', vmin=0., vmax=np.max(I), origin='lower', extent=extent) #vmax=intensityMax
+    # total intensity and linear polarization ticks.
+    # Is = np.sum(I)
+    im1 = ax1.imshow(I, cmap='afmhot', vmin=0., vmax=np.max(I), origin='lower', extent=extent)  # vmax=intensityMax
     # intensityMax; vmax=np.max(I)
     colorbar(im1)
-    #print(Is)
-    #print('V/I = {0:1.2e}'.format(np.sum(V)/np.sum(I)))
+    # print(Is)
+    # print('V/I = {0:1.2e}'.format(np.sum(V)/np.sum(I)))
     
-    #Circular polarization fraction
+    # circular polarization fraction
     if fractionalCircular:
         cpfrac = 100.*V/I
         im2 = ax2.imshow(cpfrac, cmap='seismic', vmin=-cpMax, vmax=cpMax, origin='lower', extent=extent)
@@ -101,7 +101,7 @@ def plotPositronTestFrame(imageFile, intensityMax=3e-3, cpMax=1e-2, output=None,
         colorbar(im2)
         ax2.set_title("CP [Jy $\mu$as$^{-2}$]")
 
-    #evpa
+    # evpa
     evpa = (180./3.14159)*0.5*np.arctan2(U,Q)
     if evpa_0 == "W":
         evpa += 90.
@@ -110,7 +110,7 @@ def plotPositronTestFrame(imageFile, intensityMax=3e-3, cpMax=1e-2, output=None,
         evpa += 90.
         evpa[evpa > 90.] -= 180.
 
-    #quiver on intensity
+    # quiver on intensity
     npix = I.shape[0]
     xs = np.linspace(-fov_muas/2,fov_muas/2,npix)
     Xs,Ys = np.meshgrid(xs,xs)
@@ -126,7 +126,7 @@ def plotPositronTestFrame(imageFile, intensityMax=3e-3, cpMax=1e-2, output=None,
       scale=4,
       pivot='mid')
 
-    #Formatting
+    # formatting
     ax1.set_title("Stokes I [Jy $\mu$as$^{-2}$]")
     ax1.set_ylabel('$\mu$as')
     ax1.set_xlabel('$\mu$as')
@@ -138,13 +138,13 @@ def plotPositronTestFrame(imageFile, intensityMax=3e-3, cpMax=1e-2, output=None,
         axis.set_xticks(np.linspace(-1*40,1*40,1*5))
         axis.set_yticks(np.linspace(-1*40,1*40,1*5))
 
-    #Label.  Note that the positron fraction was included as part of the file name.  See some basic calculations here.
+    # label. note that the positron fraction was included as part of the file name. see some basic calculations here.
     positronRatio = _infer_positron_ratio(imageFile)
     bbox = {'boxstyle': 'round', 'facecolor': 'wheat', 'alpha': 0.8}
     ax2.text(0.05, 0.05, r'$n_{pairs}/(n_-)_0=$' + '{0:1.2f}'.format(positronRatio), ha='left', va='bottom', transform=ax2.transAxes, fontsize=12)
     ax2.text(0.05, 0.95, 'V/I = {0:1.2e}'.format(np.sum(V)/np.sum(I)), ha='left', va='top', transform=ax2.transAxes, fontsize=12)
     ax1.text(0.05, 0.95, 'I={0:3.2e} Jy'.format(np.sum(I) * pixelSize), ha='left', va='top', transform=ax1.transAxes, fontsize=12, color='white')
-    #ax1.text(0.05, 0.95, 'I={0:3.2f} Jy'.format(np.sum(I) * pixelSize), ha='left', va='top', transform=ax1.transAxes, fontsize=12, color='white')
+    # ax1.text(0.05, 0.95, 'I={0:3.2f} Jy'.format(np.sum(I) * pixelSize), ha='left', va='top', transform=ax1.transAxes, fontsize=12, color='white')
     ax1.text(0.05, 0.05, 'P/I={0:1.2e}'.format(np.sqrt(np.sum(Q)**2 + np.sum(U)**2)/np.sum(I)), ha='left', va='bottom', transform=ax1.transAxes, fontsize=12, color='white')
     print(positronRatio, '{0:1.2e}'.format(np.sum(V)/np.sum(I)))
     fig.tight_layout()
@@ -181,7 +181,7 @@ for subdir in root_dir.iterdir():
                 str(h5_file),
                 cpMax=0.1,
                 fractionalCircular=False,
-                output=str(output_image_path) # pass explicit output path
+                output=str(output_image_path)  # pass explicit output path
             )
         except Exception as e:
             print(f"failed to process {h5_file.name}: {e}")
