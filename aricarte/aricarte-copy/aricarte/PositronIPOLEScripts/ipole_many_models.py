@@ -20,7 +20,7 @@ folderToDumpRange[library + 'SANE/a0/288x128x128_IHARM'] = [1000,2000]
 folderToDumpRange[library + 'SANE/a-0.5/288x128x128_IHARM'] = [1000,1600]
 folderToDumpRange[library + 'SANE/a-0.94/288x128x128_IHARM'] = [1200,1800]
 
-def runIPOLE(inputSimulationFile, outputFileName, Munit, Rhigh=20, freq_Hz=230e9, MBH=6.2e9, npixel=160, ipoleExecutable='../ipole_dev/ipole', \
+def runIPOLE(inputSimulationFile, outputFileName, Munit, Rhigh=20, Rlow=None, freq_Hz=230e9, MBH=6.2e9, npixel=160, ipoleExecutable='../ipole_dev/ipole', \
 	thetacam=163.0, phicam=0.0, fov=160.0, rmax_geo=50, parameterFileName='./runIPOLE.par', counterjet=0, target_nturns=-1, positronRatio=0, \
 	beta_crit_coefficient=0.5, beta_crit=1, dsource=16.9e6, unpol=False,constant_beta_e0=0.01, emission_type=4,electronModel=2,sigma_transition=0.5,sigma_cut=1.0, kappa_slope=3.5, trace=0, traceCoordinates=(0,0), trace_outf=None):
 
@@ -46,7 +46,10 @@ def runIPOLE(inputSimulationFile, outputFileName, Munit, Rhigh=20, freq_Hz=230e9
 		command += ' --MBH={0:2.2e}'.format(MBH)
 		command += ' --dsource={0:2.2e}'.format(dsource)
 		command += ' --M_unit='+str(Munit)
-		command += ' --trat_large='+str(Rhigh)
+		if Rhigh is not None:
+			command += ' --trat_large='+str(Rhigh)
+		if Rlow is not None:
+			command += ' --trat_small='+str(Rlow)
 		command += ' --nx='+str(npixel)
 		command += ' --ny='+str(npixel)
 		command += ' --fov='+str(fov)
@@ -54,8 +57,10 @@ def runIPOLE(inputSimulationFile, outputFileName, Munit, Rhigh=20, freq_Hz=230e9
 		command += ' --rmax_geo='+str(rmax_geo)
 		command += ' --target_nturns='+str(target_nturns)
 		command += ' --positronRatio='+str(positronRatio)
-		command += ' --beta_crit='+str(beta_crit)
-		command += ' --beta_crit_coefficient='+str(beta_crit_coefficient)
+		if beta_crit is not None:
+			command += ' --beta_crit='+str(beta_crit)
+		if beta_crit_coefficient is not None:
+			command += ' --beta_crit_coefficient='+str(beta_crit_coefficient)
 		command += ' --emission_type='+str(emission_type)
 		command += ' --electronModel='+str(electronModel)
 		command += ' --constant_beta_e0='+str(constant_beta_e0)
@@ -82,7 +87,10 @@ def runIPOLE(inputSimulationFile, outputFileName, Munit, Rhigh=20, freq_Hz=230e9
 			myfile.write('MBH {0:2.2e}'.format(MBH)+'\n')
 			myfile.write('dsource {0:2.2e}'.format(dsource)+'\n')
 			myfile.write('M_unit '+str(Munit)+'\n')
-			myfile.write('trat_large '+str(Rhigh)+'\n')
+			if Rhigh is not None:
+				myfile.write('trat_large '+str(Rhigh)+'\n')
+			if Rlow is not None:
+				myfile.write('trat_small '+str(Rlow)+'\n')
 			myfile.write('nx '+str(npixel)+'\n')
 			myfile.write('ny '+str(npixel)+'\n')
 			myfile.write('fov '+str(fov)+'\n')
@@ -90,8 +98,10 @@ def runIPOLE(inputSimulationFile, outputFileName, Munit, Rhigh=20, freq_Hz=230e9
 			myfile.write('rmax_geo '+str(rmax_geo)+'\n')
 			myfile.write('target_nturns '+str(target_nturns)+'\n')
 			myfile.write('positronRatio '+str(positronRatio)+'\n')
-			myfile.write('beta_crit '+str(beta_crit)+'\n')
-			myfile.write('beta_crit_coefficient '+str(beta_crit_coefficient)+'\n')
+			if beta_crit is not None:
+				myfile.write('beta_crit '+str(beta_crit)+'\n')
+			if beta_crit_coefficient is not None:
+				myfile.write('beta_crit_coefficient '+str(beta_crit_coefficient)+'\n')
 			myfile.write('kappa_kappa '+str(kappa_slope)+'\n')
 			myfile.write('emission_type '+str(emission_type)+'\n')
 			myfile.write('electronModel '+str(electronModel)+'\n')

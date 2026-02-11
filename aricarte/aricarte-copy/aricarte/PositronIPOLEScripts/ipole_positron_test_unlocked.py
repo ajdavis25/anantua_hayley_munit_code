@@ -28,11 +28,11 @@ def run_from_csv(csv_path,
                  rmax_geo=50,
                  row_index=None):
     df = pd.read_csv(csv_path, skiprows=0)
-    df.columns = df.columns.str.strip() # clean up spaces in headers
+    df.columns = df.columns.str.strip()  # clean up spaces in headers
 
     if row_index is not None:
         row = df.iloc[int(row_index)]
-        df = pd.DataFrame([row]) # single-row DataFrame
+        df = pd.DataFrame([row])  # single-row DataFrame
 
     for _, row in df.iterrows():
         if pd.isna(row["model"]) or pd.isna(row["Munit"]):

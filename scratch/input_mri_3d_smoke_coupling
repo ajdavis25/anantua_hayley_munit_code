@@ -1,0 +1,69 @@
+# 3D coupling smoke test for user_mri_4d
+
+<node_configuration>
+sizex = 1
+sizey = 1
+sizez = 1
+
+<time>
+last       = 50
+c          = 0.45
+wall_t_max = 20000
+
+<grid>
+mx0   = 16
+my0   = 16
+mz0   = 16
+tileX = 16
+tileY = 16
+tileZ = 16
+resize_tiles = 0
+
+<algorithm>
+conserv     = 1
+highorder   = 0
+Corr        = 1.0
+nfilter     = 1
+cleanfld    = 1
+cleanint    = 10
+splitparts  = 0
+fieldsolver = 1
+currdeposit = 1
+
+<restart>
+irestart   = 0
+
+<output>
+enable        = 0
+hst_enable    = 1
+hst_interval  = 10
+
+<boundaries>
+periodicx = 1
+periodicy = 1
+periodicz = 1
+
+<particles>
+maxptl1 = 200000
+maxptl2 = 200000
+m1      = 1.0
+m2      = 1.0
+ch1     = 1.0
+ch2     = -1.0
+
+<plasma>
+sigma   = 0.1
+maxptl0 = 200000
+ppc0    = 4
+c_omp   = 10
+me      = 1.0
+mi      = 1.0
+
+<problem>
+backgr_T            = 1.0
+Omega               = 0.004
+q_shear             = 1.5
+B0_ext              = 0.10
+enable_rotation     = 1
+enable_perturbation = 1
+eps_pert            = 0.01

@@ -43,6 +43,14 @@ tmp/
 figures/
 
 # Ignore specific user directories
+notebooks/
 ipole/
 aricarte/aricarte-copy/PositronIPOLEScripts/ffmpeg/
 aricarte/gsl-1.16/
+igrmonty/
+tristan-mp-v2/
+hdf5/
+hdf5-1.14.3/
+hdf5-parallel/
+pic-env/
+build-hdf5/*

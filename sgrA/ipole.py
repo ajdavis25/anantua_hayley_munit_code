@@ -26,11 +26,11 @@ def run_from_csv(csv_path,
                  sim_dir="/work/vmo703/grmhd_dump_samples",
                  out_dir="/work/vmo703/ipole_outputs/sgrA",
                  ipole_exec="/work/vmo703/aricarte/run_ipole.sh",
-                 inclination=20.0,  # 20-90 degrees (sgr a* orientation uncertain; jetless)
+                 inclination=50.0,  # 20-90 degrees (sgr a* orientation uncertain; jetless)
                  Rhigh=20,  # maybe test 10-40 later
                  freq_Hz=228e9,  # or 86e9 for multiband test
-                 fov=160.0,  # in microarcseconds; ring ~50μas for sgr a*
-                 npixel=320,  # can i reduce to 256 for faster runs?
+                 fov=200.0,  # in microarcseconds; ring ~50μas for sgr a*
+                 npixel=256,  # 256 for faster runs, 320/512 for final images
                  counterjet=0,
                  rmax_geo=50,
                  row_index=None):
@@ -98,4 +98,36 @@ def run_from_csv(csv_path,
 if __name__ == "__main__":
     # read SLURM array index if provided
     row_index = int(sys.argv[1]) if len(sys.argv) > 1 else None
-    run_from_csv("/work/vmo703/data/munits_results.csv", row_index=row_index)
+
+    # coarse bracket phase
+    inclinations = [30.0, 50.0, 70.0]
+    rhighs_bracket = [10, 20, 40]
+
+    for i in inclinations:
+        for rh in rhighs_bracket:
+            run_from_csv(
+                "/work/vmo703/data/munits_results_sgrA.csv",
+                row_index=row_index,            # or None if you want all rows
+                inclination=i,
+                Rhigh=rh,
+                freq_Hz=228e9,
+                fov=200.0,
+                npixel=256,
+                sigma_cut=1.5,                  # less jetty for Sgr A*
+            )
+
+    # refinement phase (after you inspect the first results)
+    rhighs_refine = [15, 20, 25, 30]            # if 20 looked best
+    best_i = 50.0                               # inclination to refine first
+
+    for rh in rhighs_refine:
+        run_from_csv(
+            "/work/vmo703/data/munits_results_sgrA.csv",
+            row_index=row_index,
+            inclination=best_i,
+            Rhigh=rh,
+            freq_Hz=228e9,
+            fov=200.0,
+            npixel=320,                         # higher res for finals
+            sigma_cut=1.5,
+        )

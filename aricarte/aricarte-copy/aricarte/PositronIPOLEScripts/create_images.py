@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
+import argparse
 import re, h5py, matplotlib, numpy as np, matplotlib.pyplot as plt
 from pathlib import Path
 matplotlib.use('Agg')
 
 
-root_dir = Path("/work/vmo703/ipole_outputs")
+root_dir = Path("/work/vmo703/ipole_outputs/M87")
 
 
 def infer_positron_ratio(path):
@@ -53,7 +54,16 @@ def colorbar(mappable):
     return fig.colorbar(mappable, cax=cax)
 
 
-def plotPositronTestFrame(imageFile, intensityMax=3e-3, cpMax=1e-2, output=None, EVPA_CONV="EofN", fractionalCircular=True):
+def plotPositronTestFrame(
+    imageFile,
+    intensityMax=3e-3,
+    cpMax=1e-2,
+    output=None,
+    EVPA_CONV="EofN",
+    fractionalCircular=True,
+    interpolation="nearest",
+    dpi=300,
+):
 
     #Open the IPOLE output and extract relevant data.
     
@@ -84,7 +94,15 @@ def plotPositronTestFrame(imageFile, intensityMax=3e-3, cpMax=1e-2, output=None,
 
     #Total intensity and linear polarization ticks.
     #Is = np.sum(I)
-    im1 = ax1.imshow(I, cmap='afmhot', vmin=0., vmax=np.max(I), origin='lower', extent=extent) #vmax=intensityMax
+    im1 = ax1.imshow(
+        I,
+        cmap='afmhot',
+        vmin=0.,
+        vmax=np.max(I),
+        origin='lower',
+        extent=extent,
+        interpolation=interpolation
+    ) #vmax=intensityMax
     # intensityMax; vmax=np.max(I)
     colorbar(im1)
     #print(Is)
@@ -93,11 +111,27 @@ def plotPositronTestFrame(imageFile, intensityMax=3e-3, cpMax=1e-2, output=None,
     #Circular polarization fraction
     if fractionalCircular:
         cpfrac = 100.*V/I
-        im2 = ax2.imshow(cpfrac, cmap='seismic', vmin=-cpMax, vmax=cpMax, origin='lower', extent=extent)
+        im2 = ax2.imshow(
+            cpfrac,
+            cmap='seismic',
+            vmin=-cpMax,
+            vmax=cpMax,
+            origin='lower',
+            extent=extent,
+            interpolation=interpolation
+        )
         colorbar(im2)
         ax2.set_title("CP [%]")
     else:
-        im2 = ax2.imshow(V, cmap='seismic', vmin=-cpMax/100.0*intensityMax, vmax=cpMax/100.0*intensityMax, origin='lower', extent=extent)
+        im2 = ax2.imshow(
+            V,
+            cmap='seismic',
+            vmin=-cpMax/100.0*intensityMax,
+            vmax=cpMax/100.0*intensityMax,
+            origin='lower',
+            extent=extent,
+            interpolation=interpolation
+        )
         colorbar(im2)
         ax2.set_title("CP [Jy $\mu$as$^{-2}$]")
 
@@ -148,40 +182,116 @@ def plotPositronTestFrame(imageFile, intensityMax=3e-3, cpMax=1e-2, output=None,
     ax1.text(0.05, 0.05, 'P/I={0:1.2e}'.format(np.sqrt(np.sum(Q)**2 + np.sum(U)**2)/np.sum(I)), ha='left', va='bottom', transform=ax1.transAxes, fontsize=12, color='white')
     print(positronRatio, '{0:1.2e}'.format(np.sum(V)/np.sum(I)))
     fig.tight_layout()
-    fig.savefig(output or imageFile.replace(".h5",".png"))
+    fig.savefig(output or imageFile.replace(".h5",".png"), dpi=dpi)
+    plt.close(fig)
 
 
-# handle .h5 files in the root_dir itself
-for h5_file in root_dir.glob("*.h5"):
-    try:
-        print(f"processing {h5_file}...")
-        plotPositronTestFrame(
-            str(h5_file),
-            cpMax=0.1,
-            fractionalCircular=False
-        )
-    except Exception as e:
-        print(f"failed to process {h5_file.name}: {e}")
+def iter_h5_files(root: Path, include_root: bool = True, include_subdirs: bool = True):
+    """Yield .h5 files in root_dir and/or recursively in each root_dir/* directory."""
+    seen = set()
+
+    # Files directly in root_dir (e.g. ~/M87/*.h5).
+    if include_root:
+        for h5_file in sorted(root.glob("*.h5")):
+            if not h5_file.is_file():
+                continue
+            resolved = h5_file.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            yield h5_file
+
+    # Files under each child directory in root_dir, recursively.
+    if include_subdirs:
+        for child in sorted(root.glob("*")):
+            if not child.is_dir() or child.name == "images":
+                continue
+            for h5_file in sorted(child.rglob("*.h5")):
+                if not h5_file.is_file():
+                    continue
+                resolved = h5_file.resolve()
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                yield h5_file
 
 
-# then handle subdirs
-for subdir in root_dir.iterdir():
-    if not subdir.is_dir():
-        continue
-    h5_files = list(subdir.glob("*.h5"))
-    image_output_dir = subdir / "images"
-    image_output_dir.mkdir(exist_ok=True)
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Create polarization images from IPOLE .h5 outputs."
+    )
+    parser.add_argument(
+        "--root-dir",
+        type=Path,
+        default=root_dir,
+        help=f"Top-level directory to scan (default: {root_dir}).",
+    )
+    parser.add_argument(
+        "--scope",
+        choices=["all", "root", "subdirs"],
+        default="all",
+        help="Which .h5 files to process: all (default), root-level only, or subdirs only.",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Regenerate PNGs even if output images already exist.",
+    )
+    parser.add_argument(
+        "--dpi",
+        type=int,
+        default=300,
+        help="PNG output DPI (default: 300).",
+    )
+    parser.add_argument(
+        "--interpolation",
+        default="nearest",
+        choices=["nearest", "none", "antialiased", "bilinear", "bicubic", "hanning", "hamming", "hermite", "kaiser", "quadric", "catrom", "gaussian", "bessel", "mitchell", "sinc", "lanczos"],
+        help="Matplotlib imshow interpolation mode (default: nearest).",
+    )
+    return parser.parse_args()
 
-    for h5_file in h5_files:
+
+def main():
+    args = parse_args()
+    root = args.root_dir.expanduser().resolve()
+
+    include_root = args.scope in ("all", "root")
+    include_subdirs = args.scope in ("all", "subdirs")
+
+    processed = 0
+    skipped_existing = 0
+    failed = 0
+
+    for h5_file in iter_h5_files(root, include_root=include_root, include_subdirs=include_subdirs):
+        image_output_dir = h5_file.parent / "images"
+        image_output_dir.mkdir(exist_ok=True)
+        output_image_path = image_output_dir / (h5_file.stem + ".png")
+
+        if output_image_path.exists() and not args.overwrite:
+            skipped_existing += 1
+            continue
+
         try:
             print(f"processing {h5_file}...")
-            output_image_path = image_output_dir / (h5_file.stem + ".png")
-            # call existing function but override output path
             plotPositronTestFrame(
                 str(h5_file),
                 cpMax=0.1,
                 fractionalCircular=False,
-                output=str(output_image_path) # pass explicit output path
+                output=str(output_image_path),
+                interpolation=args.interpolation,
+                dpi=args.dpi
             )
+            processed += 1
         except Exception as e:
+            failed += 1
             print(f"failed to process {h5_file.name}: {e}")
+
+    print(
+        f"done: processed={processed}, skipped_existing={skipped_existing}, "
+        f"failed={failed}, scope={args.scope}, root_dir={root}"
+    )
+
+
+if __name__ == "__main__":
+    main()
