@@ -18,7 +18,7 @@ except AttributeError:
 TARGET_FLUX = 0.5
 REL_TOL = 0.05
 
-DATA_CSV = "/work/vmo703/data/paper_data_critbeta.csv"
+DATA_CSV = "/work/vmo703/data/paper_data_critbeta_both.csv"
 OUTPUT_CSV = "/work/vmo703/data/paper_output_critbeta.csv"
 PARFILE_PATH = "./runIPOLE.par"
 DEFAULT_UNPOL = False
