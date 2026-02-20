@@ -5,7 +5,7 @@ from pathlib import Path
 matplotlib.use('Agg')
 
 
-root_dir = Path("/work/vmo703/ipole_outputs/M87")
+root_dir = Path("/work/vmo703/ipole_outputs/")
 
 
 def infer_positron_ratio(path):

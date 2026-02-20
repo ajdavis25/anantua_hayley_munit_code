@@ -49,9 +49,41 @@ fi
 MAX_CONCURRENT="${SLURM_NTASKS:-80}"
 LAST_ROW="$((TOTAL_ROWS - 1))"
 
-echo "[info] launching rows 0..${LAST_ROW} with up to ${MAX_CONCURRENT} concurrent workers"
+ROW_LIST_RAW="${ROW_LIST:-}"
+ROWS=()
+if [[ -n "${ROW_LIST_RAW}" ]]; then
+  # Accept comma and/or whitespace separated row ids, e.g. "1,2,3" or "1 2 3".
+  ROW_LIST_RAW="${ROW_LIST_RAW//,/ }"
+  for ROW in ${ROW_LIST_RAW}; do
+    if [[ ! "${ROW}" =~ ^[0-9]+$ ]]; then
+      echo "[error] invalid row id '${ROW}' in ROW_LIST='${ROW_LIST:-}'"
+      exit 1
+    fi
+    if (( ROW > LAST_ROW )); then
+      echo "[error] row id ${ROW} out of range (max ${LAST_ROW})"
+      exit 1
+    fi
+    ROWS+=("${ROW}")
+  done
+  if (( ${#ROWS[@]} == 0 )); then
+    echo "[error] ROW_LIST provided but no valid row ids parsed"
+    exit 1
+  fi
+else
+  mapfile -t ROWS < <(seq 0 "${LAST_ROW}")
+fi
 
-for ROW in $(seq 0 "${LAST_ROW}"); do
+if (( MAX_CONCURRENT > ${#ROWS[@]} )); then
+  MAX_CONCURRENT="${#ROWS[@]}"
+fi
+if (( MAX_CONCURRENT <= 0 )); then
+  echo "[error] MAX_CONCURRENT must be > 0"
+  exit 1
+fi
+
+echo "[info] launching ${#ROWS[@]} row(s): ${ROWS[*]} with up to ${MAX_CONCURRENT} concurrent workers"
+
+for ROW in "${ROWS[@]}"; do
   srun --exclusive -N1 -n1 -c1 \
     python auto_munit_finder.py --row "${ROW}" \
     > "/work/vmo703/logs/row_${SLURM_JOB_ID}_${ROW}.out" \

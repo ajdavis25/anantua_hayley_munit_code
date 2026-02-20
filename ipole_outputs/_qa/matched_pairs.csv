@@ -1,0 +1,4 @@
+new_path,new_filename,ref_path,ref_filename,match_key,exact_model_match
+/work/vmo703/ipole_outputs/images/Ma+0.94_4000_CRITBETA_f0.5_bc0.01_0.00.png,Ma+0.94_4000_CRITBETA_f0.5_bc0.01_0.00.png,/work/vmo703/ipole_outputs/M87/images/output_Ma+0.94_4000_model_CRITBETA_Rhigh_0_0.000.png,output_Ma+0.94_4000_model_CRITBETA_Rhigh_0_0.000.png,Ma+0.94_4000_CRITBETA,True
+/work/vmo703/ipole_outputs/images/Ma-0.5_4000_CRITBETA_f0.5_bc0.01_0.00.png,Ma-0.5_4000_CRITBETA_f0.5_bc0.01_0.00.png,/work/vmo703/ipole_outputs/M87/images/output_Ma-0.5_4000_model_CRITBETA_Rhigh_0_0.000.png,output_Ma-0.5_4000_model_CRITBETA_Rhigh_0_0.000.png,Ma-0.5_4000_CRITBETA,True
+/work/vmo703/ipole_outputs/images/Sa+0.94_5000_CRITBETA_f0.5_bc0.01_0.00.png,Sa+0.94_5000_CRITBETA_f0.5_bc0.01_0.00.png,/work/vmo703/ipole_outputs/M87/images/output_Sa+0.94_5000_model_CRITBETA_Rhigh_0_0.000.png,output_Sa+0.94_5000_model_CRITBETA_Rhigh_0_0.000.png,Sa+0.94_5000_CRITBETA,True

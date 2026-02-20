@@ -1,0 +1,79 @@
+{
+  "generated_utc_date": "20260218",
+  "ipole_viewing_parameters": {
+    "thetacam_deg_unique": [
+      163.0
+    ],
+    "resolution_unique": [
+      "160x160",
+      "320x320"
+    ],
+    "fovx_dsource_uas_unique": [
+      160.0
+    ],
+    "freqcgs_hz_unique": [
+      228000000000.0
+    ],
+    "evidence_paths": [
+      "ipole_pars/run_Ma+0.94_5000_RBETA_pos0.par",
+      "runIPOLE.par",
+      "ipole_outputs/M87/betacrit/Ma+0.94_6000_CRITBETA_f0.5_bc0.1_1.00.h5"
+    ],
+    "datasets_used": [
+      "header/camera/thetacam",
+      "header/camera/nx",
+      "header/camera/ny",
+      "header/camera/fovx_dsource",
+      "header/freqcgs",
+      "header/dsource",
+      "Ftot"
+    ]
+  },
+  "grmonty_observer_parameters": {
+    "N_THBINS_unique": [
+      18
+    ],
+    "theta_bin_width_deg_unique": [
+      5.0
+    ],
+    "observer_mode": "No camera/FOV in runtime params; outputs are theta-binned spectra averaged over azimuth.",
+    "evidence_paths": [
+      "igrmonty/src/par.c",
+      "igrmonty/src/main.c",
+      "igrmonty/model/iharm/model.c",
+      "igrmonty/model/iharm/model.h",
+      "igrmonty/notebooks/scrap.ipynb",
+      "igrmonty/auto_munit_bracket.py"
+    ],
+    "datasets_used": [
+      "/params/M_unit",
+      "/params/B_unit",
+      "/params/Ne_unit",
+      "/params/RHO_unit",
+      "/params/Thetae_unit",
+      "/output/dOmega",
+      "/output/nuLnu"
+    ]
+  },
+  "units_conversions_used": {
+    "distance_mpc": 16.8,
+    "distance_cm": 5.18393833608e+25,
+    "Lsun_cgs": 3.827e+33,
+    "jy_conversion": "1 Jy = 1e-23 erg s^-1 cm^-2 Hz^-1",
+    "flux_formula": "F_nu[Jy] = (nuLnu_4pi/nu)/(4*pi*D^2)*1e23"
+  },
+  "plots_generated": [
+    "_reports/munit_ipole_vs_grmonty_20260218/plots/sed_overlay_SANE_RBETA_a-0.50_t4000_pos0.png",
+    "_reports/munit_ipole_vs_grmonty_20260218/plots/ratio_SANE_RBETA_a-0.50_t4000_pos0.png",
+    "_reports/munit_ipole_vs_grmonty_20260218/plots/sed_overlay_SANE_CRITBETA_a-0.50_t4000_pos0.png",
+    "_reports/munit_ipole_vs_grmonty_20260218/plots/ratio_SANE_CRITBETA_a-0.50_t4000_pos0.png",
+    "_reports/munit_ipole_vs_grmonty_20260218/plots/sed_overlay_SANE_RBETA_a+0.94_t4000_pos0.png",
+    "_reports/munit_ipole_vs_grmonty_20260218/plots/ratio_SANE_RBETA_a+0.94_t4000_pos0.png",
+    "_reports/munit_ipole_vs_grmonty_20260218/plots/ipole_resolution_fov_side_by_side.png"
+  ],
+  "assumptions": [
+    "GRMONTY flux conversion uses D=16.8 Mpc from igrmonty/auto_munit_bracket.py and scrap notebook.",
+    "IPOLE tuning reference uses data/summary_table.csv as the authoritative 0.5 Jy matched table.",
+    "For single-angle GRMONTY proxy, nearest theta bin to 17 deg is used (azimuth-averaged, not image-plane)."
+  ]
+}

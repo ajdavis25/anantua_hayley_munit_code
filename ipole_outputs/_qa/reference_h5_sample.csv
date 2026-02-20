@@ -1,0 +1,9 @@
+path,filename,nx,ny,fovx_dsource,fovy_dsource,error
+/work/vmo703/ipole_outputs/M87/Ma+0.94_4000/CRITBETA/Rhigh160/pos0/Ma+0.94_4000_CRITBETA_Rhigh160_0.00.h5,Ma+0.94_4000_CRITBETA_Rhigh160_0.00.h5,160,160,160.0,160.0,
+/work/vmo703/ipole_outputs/M87/Ma+0.94_4000/CRITBETA/Rhigh160/pos0/Ma+0.94_4000_CRITBETAwJET_Rhigh160_0.00.h5,Ma+0.94_4000_CRITBETAwJET_Rhigh160_0.00.h5,160,160,160.0,160.0,
+/work/vmo703/ipole_outputs/M87/Ma+0.94_4000/CRITBETA/Rhigh160/pos1/Ma+0.94_4000_CRITBETA_Rhigh160_1.00.h5,Ma+0.94_4000_CRITBETA_Rhigh160_1.00.h5,160,160,160.0,160.0,
+/work/vmo703/ipole_outputs/M87/Ma+0.94_4000/CRITBETA/Rhigh160/pos1/Ma+0.94_4000_CRITBETAwJET_Rhigh160_1.00.h5,Ma+0.94_4000_CRITBETAwJET_Rhigh160_1.00.h5,160,160,160.0,160.0,
+/work/vmo703/ipole_outputs/M87/Ma+0.94_4000/CRITBETA/Rhigh20/pos0/MAD_spin+0.94_t4000_CRITBETAWJET_pos0.h5,MAD_spin+0.94_t4000_CRITBETAWJET_pos0.h5,320,320,160.0,160.0,
+/work/vmo703/ipole_outputs/M87/Ma+0.94_4000/CRITBETA/Rhigh20/pos0/MAD_spin+0.94_t4000_CRITBETA_pos0.h5,MAD_spin+0.94_t4000_CRITBETA_pos0.h5,320,320,160.0,160.0,
+/work/vmo703/ipole_outputs/M87/Ma+0.94_4000/CRITBETA/Rhigh20/pos1/MAD_spin+0.94_t4000_CRITBETAWJET_pos1.h5,MAD_spin+0.94_t4000_CRITBETAWJET_pos1.h5,320,320,160.0,160.0,
+/work/vmo703/ipole_outputs/M87/Ma+0.94_4000/CRITBETA/Rhigh20/pos1/MAD_spin+0.94_t4000_CRITBETA_pos1.h5,MAD_spin+0.94_t4000_CRITBETA_pos1.h5,320,320,160.0,160.0,
