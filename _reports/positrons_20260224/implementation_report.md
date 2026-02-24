@@ -3,6 +3,9 @@
 ## Scope
 This report summarizes the positron-capability changes integrated into `igrmonty` (GRMONTY), including physics conventions, code updates, tests, and a controlled pair-scaling sweep.
 
+**Note on variable naming:** although the variable is named `Ne` in code, it is treated as the **baseline baryonic electron/ion density** (`n_i`). The true radiating/scattering lepton density is constructed internally as  
+`n_lep = (1 + 2f) n_i`, where `f = positron_ratio`.
+
 ## Locked Physics/Units Decisions
 
 ### 1) `Ne_unit` / `Ne` meaning (code-side convention)
@@ -16,8 +19,12 @@ This report summarizes the positron-capability changes integrated into `igrmonty
 - `src/radiation.c:168-175`
 - `src/main.c:108-114`
 
+**Pair model assumption:** pairs are assumed **thermal and co-moving** with the baseline electron population and share the same `Θe` and distribution family (thermal/kappa/powerlaw selection).
+
 ### 2) `kappa_es` units and scattering opacity form
 - `kappa_es(ν, Θe)` is used as mass scattering opacity in `cm^2 g^-1`.
+- Non-invariant form:  
+  `α_scatt = κ_es(ν, Θe) ρ_lep`, where `ρ_lep = n_lep m_p`.
 - Invariant scattering opacity is locked to:
 - `alpha_inv_scatt = ν * kappa_es(ν, Θe) * (n_lep * m_p)`
 - Unit check documented in code:
@@ -29,6 +36,7 @@ This report summarizes the positron-capability changes integrated into `igrmonty
 - Minimum required behavior implemented:
 - Electron-ion term scales as `n_i * n_lep`.
 - Electron-electron same-sign term scales as `n_-^2 + n_+^2`.
+- The implemented same-sign term does **not include** an explicit opposite-sign (`e^-–e^+`) brems component beyond what is captured by the EI scaling choice; this is a deliberate minimal model consistent with existing approximations.
 - Anchors:
 - `src/jnu_mixed.c:223-227`
 - `src/jnu_mixed.c:233-240` (alternate branch also uses `n_i * n_lep`)
@@ -79,6 +87,7 @@ This report summarizes the positron-capability changes integrated into `igrmonty
 - Writes positron ratio into output HDF metadata:
 - iharm: `/params/electrons/positron_ratio` and `/params/electrons/positronRatio`
 - riaf/sphere: `/params/positron_ratio`
+- `positronRatio` is written as a legacy alias for IPOLE compatibility; both keys contain the same numeric value.
 - Files:
 - `model/iharm/model.c:1430-1432`
 - `model/riaf/model.c:646`
@@ -118,19 +127,21 @@ Sweep requested for one dump with `positron_ratio = 0, 0.5, 1.0`.
 - Collated table: `/work/vmo703/_reports/positrons_20260224/tables/pair_sweep_20260224.csv`
 - Sweep logs/parfiles: `/work/vmo703/igrmonty/logs/pair_sweep_20260224/`
 
-| positron_ratio | flux_jy | flux_scale_vs_pos0 | tau_scatt_mean_scale_vs_pos0 | tau_scatt_weighted_scale_vs_pos0 |
-|---:|---:|---:|---:|---:|
-| 0.0 | 0.2851732247 | 1.0000000000 | 1.0000000000 | 1.0000000000 |
-| 0.5 | 0.4689221430 | 1.6443414120 | 2.0570899488 | 2.1256508463 |
-| 1.0 | 0.8394235969 | 2.9435568423 | 2.9743584649 | 3.1878686993 |
+| positron_ratio | expected_lepton_factor | flux_jy | flux_scale_vs_pos0 | tau_scatt_mean_scale_vs_pos0 | tau_scatt_weighted_scale_vs_pos0 |
+|---:|---:|---:|---:|---:|---:|
+| 0.0 | 1.0 | 0.2851732247 | 1.0000000000 | 1.0000000000 | 1.0000000000 |
+| 0.5 | 2.0 | 0.4689221430 | 1.6443414120 | 2.0570899488 | 2.1256508463 |
+| 1.0 | 3.0 | 0.8394235969 | 2.9435568423 | 2.9743584649 | 3.1878686993 |
 
 Interpretation:
-- Scattering depth trends increase with total lepton content as expected.
+- Scattering depth trends increase with total lepton content as expected (`1+2f` scaling).
+- Measured τ scaling deviates slightly from exact factors due to photon weighting, sampling, and transfer effects; coefficient-level tests confirm exact microphysical scaling.
 - Flux increases monotonically with pair fraction in this setup.
 - Exact factors are not strictly linear due to transfer/absorption and Monte Carlo effects, but directionality is correct.
 
 ## Backward Compatibility
 - Default `positron_ratio = 0.0` preserves baseline electron-ion behavior.
+- Brems expressions reduce exactly to the prior `n_i^2` form when `f=0`.
 - New features are opt-in.
 - Existing workflows remain valid if they do not externally pre-scale density for pairs.
 
