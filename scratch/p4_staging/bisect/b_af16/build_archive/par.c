@@ -1,0 +1,166 @@
+
+#include <math.h>
+#include "par.h"
+#include "model_radiation.h"
+
+// call this to set defaults
+void load_par_from_argv(int argc, char *argv[], Params *params)
+{
+
+  // set default values here
+  params->seed = -1; // will use time() to randomize seed if set to -1
+  params->run_tests = 0;
+
+  params->biasTuning = 1.;
+  params->fitBias = 0;
+  params->fitBiasNs = 10000.;
+  params->biasAbortRatio = 10.;
+  params->targetRatio = M_SQRT2;
+
+  params->TP_OVER_TE = 3.;
+  params->beta_crit = 1.;
+  params->beta_crit_coefficient = 0.5;
+  params->with_electrons = 2;
+  params->trat_small = 1.;
+  params->trat_large = 10.;
+  params->Thetae_max = 1.e3;
+  params->sigma_transition = 1.0;
+  params->constant_beta_e0 = 0.1;
+  params->constant_beta_e0_exponent = 1.0;
+  params->jet_sigma_cut = -1.0;
+  params->jet_beta_cut = -1.0;
+  params->jet_thetae = 0.0;
+  params->jet_ne_mult = 1.0;
+  params->positron_ratio = 0.0;
+
+  // Load parameters
+  for (int i = 0; i < argc - 1; ++i)
+  {
+    if (strcmp(argv[i], "-par") == 0)
+    {
+      load_par(argv[i + 1], params);
+    }
+  }
+
+  // Optional command-line test switch to run internal regression tests.
+  for (int i = 0; i < argc; ++i)
+  {
+    if (strcmp(argv[i], "--run-tests") == 0 ||
+        strcmp(argv[i], "--run_tests") == 0 ||
+        strcmp(argv[i], "--tests") == 0)
+    {
+      params->run_tests = 1;
+      continue;
+    }
+    if (strncmp(argv[i], "--run-tests=", 12) == 0)
+    {
+      params->run_tests = atoi(argv[i] + 12) != 0;
+      continue;
+    }
+    if (strncmp(argv[i], "--run_tests=", 12) == 0)
+    {
+      params->run_tests = atoi(argv[i] + 12) != 0;
+      continue;
+    }
+  }
+}
+
+// sets default values for elements of params (if desired) and loads
+// from par file 'fname'
+void load_par(const char *fname, Params *params)
+{
+
+  char line[256];
+  FILE *fp = fopen(fname, "r");
+
+  if (fp == NULL)
+  {
+    fprintf(stderr, "! unable to load parameter file '%s'. (%d: %s)\n", fname, errno, strerror(errno));
+    exit(-1);
+  }
+
+  // modify parameters/types below
+  while (fgets(line, 255, fp) != NULL)
+  {
+
+    if (line[0] == '#')
+      continue;
+
+    read_param(line, "seed", &(params->seed), TYPE_INT);
+    read_param(line, "run_tests", &(params->run_tests), TYPE_INT);
+
+    read_param(line, "Ns", &(params->Ns), TYPE_DBL);
+    read_param(line, "MBH", &(params->MBH), TYPE_DBL);
+    read_param(line, "M_unit", &(params->M_unit), TYPE_DBL);
+    read_param(line, "dump", (void *)(params->dump), TYPE_STR);
+    read_param(line, "spectrum", (void *)(params->spectrum), TYPE_STR);
+
+    // bias
+    read_param(line, "bias", &(params->biasTuning), TYPE_DBL);
+    read_param(line, "fit_bias", &(params->fitBias), TYPE_INT);
+    read_param(line, "fit_bias_ns", &(params->fitBiasNs), TYPE_DBL);
+    read_param(line, "bias_abort_ratio", &(params->biasAbortRatio), TYPE_DBL);
+    read_param(line, "bias_abort_ratio_limit", &(params->biasAbortRatio), TYPE_DBL);
+    read_param(line, "ratio", &(params->targetRatio), TYPE_DBL);
+
+    // two point model
+    read_param(line, "lnumin", &(params->lnumin), TYPE_DBL);
+    read_param(line, "lnumax", &(params->lnumax), TYPE_DBL);
+    read_param(line, "alpha_spec", &(params->alpha_spec), TYPE_DBL);
+
+    // electron temperature models
+    read_param(line, "TP_OVER_TE", &(params->TP_OVER_TE), TYPE_DBL);
+    read_param(line, "beta_crit", &(params->beta_crit), TYPE_DBL);
+    read_param(line, "beta_crit_coefficient", &(params->beta_crit_coefficient), TYPE_DBL);
+    read_param(line, "with_electrons", &(params->with_electrons), TYPE_INT);
+    read_param(line, "trat_small", &(params->trat_small), TYPE_DBL);
+    read_param(line, "trat_large", &(params->trat_large), TYPE_DBL);
+    read_param(line, "Thetae_max", &(params->Thetae_max), TYPE_DBL);
+    read_param(line, "sigma_transition", &(params->sigma_transition), TYPE_DBL);
+    read_param(line, "constant_beta_e0", &(params->constant_beta_e0), TYPE_DBL);
+    read_param(line, "constant_beta_e0_exponent", &(params->constant_beta_e0_exponent), TYPE_DBL);
+    read_param(line, "jet_sigma_cut", &(params->jet_sigma_cut), TYPE_DBL);
+    read_param(line, "jet_beta_cut", &(params->jet_beta_cut), TYPE_DBL);
+    read_param(line, "jet_thetae", &(params->jet_thetae), TYPE_DBL);
+    read_param(line, "jet_ne_mult", &(params->jet_ne_mult), TYPE_DBL);
+    read_param(line, "positron_ratio", &(params->positron_ratio), TYPE_DBL);
+    // IPOLE-style alias for compatibility with existing parameter generators.
+    read_param(line, "positronRatio", &(params->positron_ratio), TYPE_DBL);
+
+    // set model parameters
+    try_set_radiation_parameter(line);
+  }
+
+  fclose(fp);
+
+  params->loaded = 1;
+}
+
+// loads value -> (type *)*val if line corresponds to (key,value)
+void read_param(const char *line, const char *key, void *val, int type)
+{
+
+  // silence valgrind warnings
+  char word[256] = {0};
+  char value[256] = {0};
+
+  sscanf(line, "%s %s", word, value);
+
+  if (strcmp(word, key) == 0)
+  {
+    switch (type)
+    {
+    case TYPE_INT:
+      sscanf(value, "%d", (int *)val);
+      break;
+    case TYPE_DBL:
+      sscanf(value, "%lf", (double *)val);
+      break;
+    case TYPE_STR:
+      sscanf(value, "%s", (char *)val);
+      break;
+    default:
+      fprintf(stderr, "! attempt to load unknown type '%d'.\n", type);
+    }
+  }
+}

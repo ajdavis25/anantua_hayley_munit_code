@@ -1,0 +1,158 @@
+
+== spectrum_Ma+0.94_4000_RBETAwJET_rh80_pos0.h5 ==
+  provenance: M_unit=7.4433e+24 bias=0.05 Ns=1e+06 paper_literal=1.0 pos=0 status=ok -> PASS
+  F230: 4pi=0.4828 Jy [PASS]  cone17=0.171 Jy (x0.35 vs 4pi)
+  L_X(2-10): 4pi=1.368e+41 [FAIL vs 4.4e+40]  cone17=2.875e+40  L_bol=8.882e+41  f_compton=0.495
+  vs July: M_unit xnan  F230cone xnan  L_X xnan
+
+== spectrum_Ma+0.94_4000_RBETAwJET_rh80_pos1.h5 ==
+  provenance: M_unit=4.3702e+24 bias=0.05 Ns=1e+06 paper_literal=1.0 pos=1 status=ok -> PASS
+  F230: 4pi=0.5054 Jy [PASS]  cone17=0.1972 Jy (x0.39 vs 4pi)
+  L_X(2-10): 4pi=2.514e+41 [FAIL vs 4.4e+40]  cone17=5.125e+40  L_bol=1.287e+42  f_compton=0.640
+  vs July: M_unit xnan  F230cone xnan  L_X xnan
+
+== spectrum_Ma+0.94_5000_RBETAwJET_rh80_pos0.h5 ==
+  provenance: M_unit=1.0297e+25 bias=0.05 Ns=1e+06 paper_literal=1.0 pos=0 status=ok -> PASS
+  F230: 4pi=0.4906 Jy [PASS]  cone17=0.1898 Jy (x0.39 vs 4pi)
+  L_X(2-10): 4pi=1.063e+41 [FAIL vs 4.4e+40]  cone17=2.257e+40  L_bol=7.457e+41  f_compton=0.476
+  vs July: M_unit xnan  F230cone xnan  L_X xnan
+
+== spectrum_Ma+0.94_5000_RBETAwJET_rh80_pos1.h5 ==
+  provenance: M_unit=5.8867e+24 bias=0.05 Ns=1e+06 paper_literal=1.0 pos=1 status=ok -> PASS
+  F230: 4pi=0.5063 Jy [PASS]  cone17=0.2244 Jy (x0.44 vs 4pi)
+  L_X(2-10): 4pi=1.799e+41 [FAIL vs 4.4e+40]  cone17=3.12e+40  L_bol=9.942e+41  f_compton=0.615
+  vs July: M_unit xnan  F230cone xnan  L_X xnan
+
+== spectrum_Ma+0.94_6000_RBETAwJET_rh80_pos0.h5 ==
+  provenance: M_unit=1.6601e+25 bias=0.05 Ns=1e+06 paper_literal=1.0 pos=0 status=ok -> PASS
+  F230: 4pi=0.4874 Jy [PASS]  cone17=0.132 Jy (x0.27 vs 4pi)
+  L_X(2-10): 4pi=5.749e+40 [FAIL vs 4.4e+40]  cone17=1.265e+40  L_bol=4.947e+41  f_compton=0.422
+  vs July: M_unit xnan  F230cone xnan  L_X xnan
+
+== spectrum_Ma+0.94_6000_RBETAwJET_rh80_pos1.h5 ==
+  provenance: M_unit=9.7915e+24 bias=0.05 Ns=1e+06 paper_literal=1.0 pos=1 status=ok -> PASS
+  F230: 4pi=0.4985 Jy [PASS]  cone17=0.1169 Jy (x0.23 vs 4pi)
+  L_X(2-10): 4pi=1.1e+41 [FAIL vs 4.4e+40]  cone17=2.512e+40  L_bol=6.975e+41  f_compton=0.574
+  vs July: M_unit xnan  F230cone xnan  L_X xnan
+
+== spectrum_Ma-0.5_4000_RBETAwJET_rh80_pos0.h5 ==
+  provenance: M_unit=3.1183e+25 bias=0.05 Ns=1e+06 paper_literal=1.0 pos=0 status=ok -> PASS
+  F230: 4pi=0.4928 Jy [PASS]  cone17=0.2989 Jy (x0.61 vs 4pi)
+  L_X(2-10): 4pi=1.254e+41 [FAIL vs 4.4e+40]  cone17=8.476e+40  L_bol=8.653e+41  f_compton=0.478
+  vs July: M_unit xnan  F230cone xnan  L_X xnan
+
+== spectrum_Ma-0.5_4000_RBETAwJET_rh80_pos1.h5 ==
+  provenance: M_unit=1.8147e+25 bias=0.05 Ns=1e+06 paper_literal=1.0 pos=1 status=ok -> PASS
+  F230: 4pi=0.4791 Jy [PASS]  cone17=0.2857 Jy (x0.60 vs 4pi)
+  L_X(2-10): 4pi=2.234e+41 [FAIL vs 4.4e+40]  cone17=1.455e+41  L_bol=1.201e+42  f_compton=0.622
+  vs July: M_unit xnan  F230cone xnan  L_X xnan
+
+== spectrum_Ma-0.5_5000_RBETAwJET_rh80_pos0.h5 ==
+  provenance: M_unit=4.0471e+25 bias=0.05 Ns=1e+06 paper_literal=1.0 pos=0 status=ok -> PASS
+  F230: 4pi=0.4972 Jy [PASS]  cone17=0.3466 Jy (x0.70 vs 4pi)
+  L_X(2-10): 4pi=1.3e+41 [FAIL vs 4.4e+40]  cone17=8.237e+40  L_bol=8.799e+41  f_compton=0.477
+  vs July: M_unit xnan  F230cone xnan  L_X xnan
+
+== spectrum_Ma-0.5_5000_RBETAwJET_rh80_pos1.h5 ==
+  provenance: M_unit=2.3390e+25 bias=0.05 Ns=1e+06 paper_literal=1.0 pos=1 status=ok -> PASS
+  F230: 4pi=0.5019 Jy [PASS]  cone17=0.3559 Jy (x0.71 vs 4pi)
+  L_X(2-10): 4pi=2.296e+41 [FAIL vs 4.4e+40]  cone17=1.465e+41  L_bol=1.205e+42  f_compton=0.623
+  vs July: M_unit xnan  F230cone xnan  L_X xnan
+
+== spectrum_Ma-0.5_6000_RBETAwJET_rh80_pos0.h5 ==
+  provenance: M_unit=5.5627e+25 bias=0.05 Ns=1e+06 paper_literal=1.0 pos=0 status=ok -> PASS
+  F230: 4pi=0.4975 Jy [PASS]  cone17=0.3347 Jy (x0.67 vs 4pi)
+  L_X(2-10): 4pi=1.053e+41 [FAIL vs 4.4e+40]  cone17=7.015e+40  L_bol=7.089e+41  f_compton=0.501
+  vs July: M_unit xnan  F230cone xnan  L_X xnan
+
+== spectrum_Ma-0.5_6000_RBETAwJET_rh80_pos1.h5 ==
+  provenance: M_unit=3.3309e+25 bias=0.05 Ns=1e+06 paper_literal=1.0 pos=1 status=ok -> PASS
+  F230: 4pi=0.5042 Jy [PASS]  cone17=0.3205 Jy (x0.64 vs 4pi)
+  L_X(2-10): 4pi=2.001e+41 [FAIL vs 4.4e+40]  cone17=1.362e+41  L_bol=1.065e+42  f_compton=0.649
+  vs July: M_unit xnan  F230cone xnan  L_X xnan
+
+== spectrum_Sa+0.94_4000_RBETAwJET_rh160_pos0.h5 ==
+  provenance: M_unit=2.9051e+27 bias=0.506 Ns=1e+06 paper_literal=1.0 pos=0 status=ok -> PASS
+  F230: 4pi=0.5142 Jy [PASS]  cone17=0.1298 Jy (x0.25 vs 4pi)
+  L_X(2-10): 4pi=4.328e+39 [PASS vs 4.4e+40]  cone17=1.035e+40  L_bol=2.036e+41  f_compton=0.205
+  vs July: M_unit x1.000  F230cone x0.970  L_X x10.298
+
+== spectrum_Sa+0.94_4000_RBETAwJET_rh160_pos1.h5 ==
+  provenance: M_unit=1.7812e+27 bias=0.506 Ns=1e+06 paper_literal=1.0 pos=1 status=ok -> PASS
+  F230: 4pi=0.5204 Jy [PASS]  cone17=0.1301 Jy (x0.25 vs 4pi)
+  L_X(2-10): 4pi=8.868e+39 [PASS vs 4.4e+40]  cone17=1.849e+40  L_bol=2.666e+41  f_compton=0.333
+  vs July: M_unit x1.000  F230cone x1.097  L_X x5.317
+
+== spectrum_Sa+0.94_5000_CRITBETAwJET_rh20_bc1_f0.5_pos0.h5 ==
+  provenance: M_unit=1.4218e+27 bias=0.338 Ns=1e+06 paper_literal=1.0 pos=0 status=ok -> PASS
+  F230: 4pi=0.4937 Jy [PASS]  cone17=0.05272 Jy (x0.11 vs 4pi)
+  L_X(2-10): 4pi=2.923e+39 [PASS vs 4.4e+40]  cone17=4.824e+38  L_bol=2.758e+41  f_compton=0.246
+  vs July: M_unit x1.000  F230cone x1.161  L_X x1.036
+
+== spectrum_Sa+0.94_5000_CRITBETAwJET_rh20_bc1_f0.5_pos1.h5 ==
+  provenance: M_unit=9.0328e+26 bias=0.506 Ns=1e+06 paper_literal=1.0 pos=1 status=ok -> PASS
+  F230: 4pi=0.4871 Jy [PASS]  cone17=0.04881 Jy (x0.10 vs 4pi)
+  L_X(2-10): 4pi=1.186e+40 [PASS vs 4.4e+40]  cone17=9.362e+38  L_bol=3.963e+41  f_compton=0.425
+  vs July: M_unit x1.000  F230cone x0.993  L_X x1.058
+
+== spectrum_Sa+0.94_5000_RBETAwJET_rh160_pos0.h5 ==
+  provenance: M_unit=1.9944e+27 bias=0.675 Ns=1e+06 paper_literal=1.0 pos=0 status=ok -> PASS
+  F230: 4pi=0.5146 Jy [PASS]  cone17=0.09959 Jy (x0.19 vs 4pi)
+  L_X(2-10): 4pi=4.903e+38 [PASS vs 4.4e+40]  cone17=2.525e+38  L_bol=1.75e+41  f_compton=0.115
+  vs July: M_unit x1.000  F230cone x1.069  L_X x1.292
+
+== spectrum_Sa+0.94_5000_RBETAwJET_rh160_pos1.h5 ==
+  provenance: M_unit=1.2099e+27 bias=1.01 Ns=1e+06 paper_literal=1.0 pos=1 status=ok -> PASS
+  F230: 4pi=0.5005 Jy [PASS]  cone17=0.09012 Jy (x0.18 vs 4pi)
+  L_X(2-10): 4pi=1.634e+39 [PASS vs 4.4e+40]  cone17=4.904e+38  L_bol=2.069e+41  f_compton=0.200
+  vs July: M_unit x1.000  F230cone x1.134  L_X x1.132
+
+== spectrum_Sa+0.94_6000_RBETAwJET_rh160_pos0.h5 ==
+  provenance: M_unit=2.0228e+27 bias=2.36 Ns=1e+06 paper_literal=1.0 pos=0 status=ok -> PASS
+  F230: 4pi=0.5189 Jy [PASS]  cone17=0.07586 Jy (x0.15 vs 4pi)
+  L_X(2-10): 4pi=4.7e+38 [PASS vs 4.4e+40]  cone17=7.664e+37  L_bol=1.733e+41  f_compton=0.118
+  vs July: M_unit x1.000  F230cone x1.029  L_X x1.085
+
+== spectrum_Sa-0.5_4000_CRITBETAwJET_rh20_bc1_f0.5_pos0.h5 ==
+  provenance: M_unit=3.8122e+28 bias=5.06 Ns=1e+06 paper_literal=1.0 pos=0 status=ok -> PASS
+  F230: 4pi=0.514 Jy [PASS]  cone17=0.1949 Jy (x0.38 vs 4pi)
+  L_X(2-10): 4pi=3.333e+39 [PASS vs 4.4e+40]  cone17=1.544e+39  L_bol=3.034e+41  f_compton=0.296
+  vs July: M_unit x1.000  F230cone x1.041  L_X x1.009
+
+== spectrum_Sa-0.5_4000_CRITBETAwJET_rh20_bc1_f0.5_pos1.h5 ==
+  provenance: M_unit=2.4246e+28 bias=3.72 Ns=1e+06 paper_literal=1.0 pos=1 status=ok -> PASS
+  F230: 4pi=0.5164 Jy [PASS]  cone17=0.1892 Jy (x0.37 vs 4pi)
+  L_X(2-10): 4pi=1.431e+40 [PASS vs 4.4e+40]  cone17=6.264e+39  L_bol=4.717e+41  f_compton=0.486
+  vs July: M_unit x1.000  F230cone x1.087  L_X x1.028
+
+== spectrum_Sa-0.5_4000_RBETAwJET_rh160_pos0.h5 ==
+  provenance: M_unit=3.7263e+28 bias=5.7 Ns=1e+06 paper_literal=1.0 pos=0 status=ok -> PASS
+  F230: 4pi=0.4818 Jy [PASS]  cone17=0.183 Jy (x0.38 vs 4pi)
+  L_X(2-10): 4pi=2.863e+39 [PASS vs 4.4e+40]  cone17=2.769e+39  L_bol=2.344e+41  f_compton=0.216
+  vs July: M_unit x1.000  F230cone x1.083  L_X x1.173
+
+== spectrum_Sa-0.5_4000_RBETAwJET_rh160_pos1.h5 ==
+  provenance: M_unit=2.4040e+28 bias=10.4 Ns=1e+06 paper_literal=1.0 pos=1 status=ok -> PASS
+  F230: 4pi=0.5088 Jy [PASS]  cone17=0.1794 Jy (x0.35 vs 4pi)
+  L_X(2-10): 4pi=1.151e+40 [PASS vs 4.4e+40]  cone17=5.038e+39  L_bol=3.595e+41  f_compton=0.366
+  vs July: M_unit x1.031  F230cone x1.104  L_X x1.115
+
+== spectrum_Sa-0.5_6000_CRITBETAwJET_rh20_bc1_f0.5_pos0.h5 ==
+  provenance: M_unit=8.2003e+28 bias=8.03 Ns=1e+06 paper_literal=1.0 pos=0 status=ok -> PASS
+  F230: 4pi=0.4835 Jy [PASS]  cone17=0.3461 Jy (x0.72 vs 4pi)
+  L_X(2-10): 4pi=2.553e+39 [PASS vs 4.4e+40]  cone17=1.438e+39  L_bol=3.716e+41  f_compton=0.296
+  vs July: M_unit x1.000  F230cone x0.912  L_X x0.949
+
+== spectrum_Sa-0.5_6000_RBETAwJET_rh160_pos0.h5 ==
+  provenance: M_unit=8.7985e+28 bias=15.8 Ns=1e+06 paper_literal=1.0 pos=0 status=ok -> PASS
+  F230: 4pi=0.488 Jy [PASS]  cone17=0.354 Jy (x0.73 vs 4pi)
+  L_X(2-10): 4pi=1.752e+39 [PASS vs 4.4e+40]  cone17=1.015e+39  L_bol=2.593e+41  f_compton=0.189
+  vs July: M_unit x1.000  F230cone x0.942  L_X x1.005
+
+== spectrum_Sa-0.5_6000_RBETAwJET_rh160_pos1.h5 ==
+  provenance: M_unit=5.5217e+28 bias=21.5 Ns=1e+06 paper_literal=1.0 pos=1 status=ok -> PASS
+  F230: 4pi=0.5003 Jy [PASS]  cone17=0.3463 Jy (x0.69 vs 4pi)
+  L_X(2-10): 4pi=7.602e+39 [PASS vs 4.4e+40]  cone17=4.629e+39  L_bol=3.8e+41  f_compton=0.304
+  vs July: M_unit x1.000  F230cone x1.007  L_X x0.994
+
+[csv] /work/vmo703/igrmonty_outputs/m87/_qa/p4_qa_run_2026-09-15.csv

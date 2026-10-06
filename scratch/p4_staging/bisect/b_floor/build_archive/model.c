@@ -1,0 +1,1769 @@
+#include "decs.h"
+#include "coordinates.h"
+#include "model_radiation.h"
+
+#include <float.h>
+
+#define NVAR (10)
+
+static const double THETAE_HARD_MAX = 1.e3;
+static const double BETA_FLOOR = 1.e-5;
+static const double SIGMA_MAX = 300.0;
+
+// electron model. these values will be overwritten by anything found in par.c
+// or in the runtime parameter file.
+// with_electrons ->
+//     0 : constant TP_OVER_TE
+//     1 : use dump file model (kawazura?)
+//     2 : mixed TP_OVER_TE (moscibrodzka "beta" model)
+//     3 : critical beta TP_OVER_TE (Anantua)
+//     4 : mixed TP_OVER_TE with constant-beta jet supplement
+//     5 : critical beta TP_OVER_TE with constant-beta jet supplement
+static double tp_over_te = 3.;
+static double trat_small = 2.;
+static double trat_large = 70.;
+static double beta_crit = 1.;
+static double beta_crit_coefficient = 0.5;
+static double Thetae_max = 1.e3;
+static double sigma_transition = 1.0;
+static double constant_beta_e0 = 0.1;
+static double constant_beta_e0_exponent = 1.0;
+// P_B convention for the constant-beta supplement.
+//   0 (legacy, default): energy_density = B_cgs^2/(2(game-1)) -- the form the
+//     group's ipole fork ships, which is 12*pi (~37.7x) hotter than the papers.
+//   1 (paper-literal):   P_B = B_cgs^2/(8 pi), i.e. P_e = beta_e0 * P_B exactly
+//     as defined in Anantua+2020 (MNRAS 493, 1404: beta_e = P_e/(b^2/2) in HL
+//     code units) and Emami+2021 (ApJ 923, 272, eq. 25: P_B = B^2/8pi in CGS).
+// At exponent = 1 the two differ by exactly 12*pi. Parameter-gated so every
+// existing run stays reproducible; see docs/2026-08-06_zoom_agenda_thetae_cap.md.
+static int constant_beta_paper_literal = 0;
+static double jet_sigma_cut = -1.0;
+static double jet_beta_cut = -1.0;
+static double jet_thetae = 0.0;
+static double jet_ne_mult = 1.0;
+static int with_electrons = 2;
+
+// fluid data
+double ****bcon;
+double ****bcov;
+double ****ucon;
+double ****ucov;
+double ****p;
+double ***ne;
+double ***thetae;
+double ***b;
+
+double TP_OVER_TE;
+
+static double MBH, game, gamp;
+
+static hdf5_blob fluid_header = {0};
+
+static int with_radiation;
+
+void report_bad_input(int argc)
+{
+  if (argc < 6)
+  {
+    fprintf(stderr, "usage: \n");
+    fprintf(stderr, "  HARM:    grmonty Ns fname M_unit[g] MBH[Msolar] Tp/Te\n");
+    fprintf(stderr, "  bhlight: grmonty Ns fname\n");
+    exit(0);
+  }
+}
+
+///////////////////////////////// SUPERPHOTONS /////////////////////////////////
+
+#define ROULETTE 1.e4
+int stop_criterion(struct of_photon *ph)
+{
+  // stop if weight below minimum weight
+  if (ph->w < WEIGHT_MIN)
+  {
+    if (monty_rand() <= 1. / ROULETTE)
+    {
+      ph->w *= ROULETTE;
+    }
+    else
+    {
+      ph->w = 0.;
+      return 1;
+    }
+  }
+
+  // right now, only support X->KS exponential coordinates
+  double X1min = log(Rh * 1.05);
+  double X1max = log(Rmax * 1.1);
+
+  if (ph->X[1] < X1min || ph->X[1] > X1max)
+  {
+    return 1;
+  }
+
+  return 0;
+}
+
+int record_criterion(struct of_photon *ph)
+{
+  double X1max = log(Rmax * 1.1);
+
+  if (ph->X[1] > X1max)
+  {
+    return 1;
+  }
+
+  return 0;
+}
+#undef ROULETTE
+
+#define EPS 0.04
+double stepsize(double X[NDIM], double K[NDIM])
+{
+  double dl, dlx1, dlx2, dlx3;
+  double idlx1, idlx2, idlx3;
+
+  /*
+  dlx1 = EPS * X[1] / (fabs(K[1]) + SMALL);
+  dlx2 = EPS * GSL_MIN(X[2], stopx[2] - X[2]) / (fabs(K[2]) + SMALL);
+  dlx3 = EPS / (fabs(K[3]) + SMALL);
+   */
+
+#define MIN(A, B) (A < B ? A : B)
+
+  dlx1 = EPS / (fabs(K[1]) + SMALL);
+  dlx2 = EPS * MIN(X[2], 1. - X[2]) / (fabs(K[2]) + SMALL);
+  dlx3 = EPS / (fabs(K[3]) + SMALL);
+
+#undef MIN
+
+  idlx1 = 1. / (fabs(dlx1) + SMALL);
+  idlx2 = 1. / (fabs(dlx2) + SMALL);
+  idlx3 = 1. / (fabs(dlx3) + SMALL);
+
+  dl = 1. / (idlx1 + idlx2 + idlx3);
+
+  return (dl);
+}
+#undef EPS
+
+void record_super_photon(struct of_photon *ph)
+{
+  // DEBUG: print escaped photon info
+  /*fprintf(stderr,
+          "ESCAPE E=%g tau_scatt=%g tau_abs=%g nscatt=%d\n",
+          ph->E, ph->tau_scatt, ph->tau_abs, ph->nscatt);*/
+
+  double lE, dx2;
+  int iE, ix2, ic;
+
+  if (!isfinite(ph->w) || !isfinite(ph->E) || !isfinite(ph->ratio_brems) ||
+      !isfinite(ph->tau_abs) || !isfinite(ph->tau_scatt) || !isfinite(ph->X1i) ||
+      !isfinite(ph->X2i) || !isfinite(ph->X[3]) || !isfinite(ph->ne0) ||
+      !isfinite(ph->b0) || !isfinite(ph->thetae0))
+  {
+    // D5 root-cause: was `isnan(...)` only, which does not catch +-inf. A photon with
+    // infinite (not NaN) w/E would sail through this check, then poison spect[]'s
+    // running sums the moment it's added (inf + finite = inf; a later inf + -inf = NaN
+    // in report_spectrum's dL total) -- see
+    // docs/2026-07-23_jet_implementation_changes.md sec 9/10 (Finding D5).
+    fprintf(stderr,
+            "record non-finite: w=%.15e E=%.15e nscatt=%d ratio_brems=%.15e "
+            "thetae0=%.15e ne0=%.15e b0=%.15e tau_abs=%.15e tau_scatt=%.15e\n",
+            ph->w, ph->E, ph->nscatt, ph->ratio_brems,
+            ph->thetae0, ph->ne0, ph->b0, ph->tau_abs, ph->tau_scatt);
+    return;
+  }
+
+  // bin in X[2] BL coord while folding around the equator and check limit
+  double r, th;
+  bl_coord(ph->X, &r, &th);
+  dx2 = M_PI / 2. / N_THBINS;
+  if (th > M_PI / 2.)
+  {
+    ix2 = (int)((M_PI - th) / dx2);
+  }
+  else
+  {
+    ix2 = (int)(th / dx2);
+  }
+  if (ix2 < 0 || ix2 >= N_THBINS)
+    return;
+
+#if CUSTOM_AVG == 1
+  double nu = ph->E * ME * CL * CL / HPL;
+  if (nu < CA_MIN_FREQ || CA_MAX_FREQ < nu)
+    return;
+  // Get custom average bin
+  dlE = (log(CA_MAX_QTY) - log(CA_MIN_QTY)) / CA_NBINS;
+  lE = log(ph->QTY0);
+  iE = (int)((lE - log(CA_MIN_QTY)) / dlE + 2.5) - 2;
+  if (iE < 0 || iE >= CA_NBINS)
+    return;
+#else
+  // Get energy bin (centered on iE*dlE + lE0)
+  lE = log(ph->E);
+  iE = (int)((lE - lE0) / dlE + 2.5) - 2;
+  if (iE < 0 || iE >= N_EBINS)
+    return;
+#endif // CUSTOM_AVG
+
+  // Get compton bin
+  ic = ph->nscatt;
+  if (ic > 3)
+    ic = 3;
+
+#pragma omp atomic
+  N_superph_recorded++;
+
+  double ratio_synch = 1. - ph->ratio_brems;
+
+  // Add superphoton to synch spectrum
+  spect[ic][ix2][iE].dNdlE += ph->w * ratio_synch;
+  spect[ic][ix2][iE].dEdlE += ph->w * ph->E * ratio_synch;
+  spect[ic][ix2][iE].tau_abs += ph->w * ph->tau_abs * ratio_synch;
+  spect[ic][ix2][iE].tau_scatt += ph->w * ph->tau_scatt * ratio_synch;
+  spect[ic][ix2][iE].X1iav += ph->w * ph->X1i * ratio_synch;
+  spect[ic][ix2][iE].X2isq += ph->w * (ph->X2i * ph->X2i) * ratio_synch;
+  spect[ic][ix2][iE].X3fsq += ph->w * (ph->X[3] * ph->X[3]) * ratio_synch;
+  spect[ic][ix2][iE].ne0 += ph->w * (ph->ne0) * ratio_synch;
+  spect[ic][ix2][iE].b0 += ph->w * (ph->b0) * ratio_synch;
+  spect[ic][ix2][iE].thetae0 += ph->w * (ph->thetae0) * ratio_synch;
+  spect[ic][ix2][iE].nscatt += ph->w * ph->nscatt * ratio_synch;
+  spect[ic][ix2][iE].nph += 1.;
+  // .. to brems spectrum
+  spect[ic + (N_COMPTBINS + 1)][ix2][iE].dNdlE += ph->w * ph->ratio_brems;
+  spect[ic + (N_COMPTBINS + 1)][ix2][iE].dEdlE += ph->w * ph->E * ph->ratio_brems;
+  spect[ic + (N_COMPTBINS + 1)][ix2][iE].tau_abs += ph->w * ph->tau_abs * ph->ratio_brems;
+  spect[ic + (N_COMPTBINS + 1)][ix2][iE].tau_scatt += ph->w * ph->tau_scatt * ph->ratio_brems;
+  spect[ic + (N_COMPTBINS + 1)][ix2][iE].X1iav += ph->w * ph->X1i * ph->ratio_brems;
+  spect[ic + (N_COMPTBINS + 1)][ix2][iE].X2isq += ph->w * (ph->X2i * ph->X2i) * ph->ratio_brems;
+  spect[ic + (N_COMPTBINS + 1)][ix2][iE].X3fsq += ph->w * (ph->X[3] * ph->X[3]) * ph->ratio_brems;
+  spect[ic + (N_COMPTBINS + 1)][ix2][iE].ne0 += ph->w * (ph->ne0) * ph->ratio_brems;
+  spect[ic + (N_COMPTBINS + 1)][ix2][iE].b0 += ph->w * (ph->b0) * ph->ratio_brems;
+  spect[ic + (N_COMPTBINS + 1)][ix2][iE].thetae0 += ph->w * (ph->thetae0) * ph->ratio_brems;
+  spect[ic + (N_COMPTBINS + 1)][ix2][iE].nscatt += ph->w * ph->nscatt * ph->ratio_brems;
+  spect[ic + (N_COMPTBINS + 1)][ix2][iE].nph += 1.;
+}
+
+struct of_spectrum shared_spect[N_TYPEBINS][N_THBINS][N_EBINS] = {};
+
+void omp_reduce_spect()
+{
+#pragma omp parallel
+  {
+#pragma omp critical
+    {
+      for (int k = 0; k < N_TYPEBINS; k++)
+      {
+        for (int i = 0; i < N_THBINS; i++)
+        {
+          for (int j = 0; j < N_EBINS; j++)
+          {
+            shared_spect[k][i][j].dNdlE +=
+                spect[k][i][j].dNdlE;
+            shared_spect[k][i][j].dEdlE +=
+                spect[k][i][j].dEdlE;
+            shared_spect[k][i][j].tau_abs +=
+                spect[k][i][j].tau_abs;
+            shared_spect[k][i][j].tau_scatt +=
+                spect[k][i][j].tau_scatt;
+            shared_spect[k][i][j].X1iav +=
+                spect[k][i][j].X1iav;
+            shared_spect[k][i][j].X2isq +=
+                spect[k][i][j].X2isq;
+            shared_spect[k][i][j].X3fsq +=
+                spect[k][i][j].X3fsq;
+            shared_spect[k][i][j].ne0 +=
+                spect[k][i][j].ne0;
+            shared_spect[k][i][j].b0 +=
+                spect[k][i][j].b0;
+            shared_spect[k][i][j].thetae0 +=
+                spect[k][i][j].thetae0;
+            shared_spect[k][i][j].nscatt +=
+                spect[k][i][j].nscatt;
+            shared_spect[k][i][j].nph +=
+                spect[k][i][j].nph;
+          }
+        }
+      }
+    } // omp critical
+
+#pragma omp barrier
+
+#pragma omp master
+    {
+      for (int k = 0; k < N_TYPEBINS; k++)
+      {
+        for (int i = 0; i < N_THBINS; i++)
+        {
+          for (int j = 0; j < N_EBINS; j++)
+          {
+            spect[k][i][j].dNdlE =
+                shared_spect[k][i][j].dNdlE;
+            spect[k][i][j].dEdlE =
+                shared_spect[k][i][j].dEdlE;
+            spect[k][i][j].tau_abs =
+                shared_spect[k][i][j].tau_abs;
+            spect[k][i][j].tau_scatt =
+                shared_spect[k][i][j].tau_scatt;
+            spect[k][i][j].X1iav =
+                shared_spect[k][i][j].X1iav;
+            spect[k][i][j].X2isq =
+                shared_spect[k][i][j].X2isq;
+            spect[k][i][j].X3fsq =
+                shared_spect[k][i][j].X3fsq;
+            spect[k][i][j].ne0 =
+                shared_spect[k][i][j].ne0;
+            spect[k][i][j].b0 =
+                shared_spect[k][i][j].b0;
+            spect[k][i][j].thetae0 =
+                shared_spect[k][i][j].thetae0;
+            spect[k][i][j].nscatt =
+                shared_spect[k][i][j].nscatt;
+            spect[k][i][j].nph =
+                shared_spect[k][i][j].nph;
+          }
+        }
+      }
+    } // omp master
+  } // omp parallel
+}
+
+double bias_func(double Te, double w)
+{
+  /*
+  double bias, max ;
+
+  max = 0.5 * w / WEIGHT_MIN;
+
+  //bias = Te*Te;
+  bias = Te*Te/(5. * max_tau_scatt);
+  //bias = 100. * Te * Te / (bias_norm * max_tau_scatt);
+
+  //if (bias < TP_OVER_TE)
+  //  bias = TP_OVER_TE;
+  if (bias > max)
+    bias = max;
+
+  return bias;// / TP_OVER_TE;
+   */
+
+  // use old method with bias tuning parameter
+  double bias, max;
+
+  max = 0.5 * w / WEIGHT_MIN;
+
+  if (Te > SCATTERING_THETAE_MAX)
+    Te = SCATTERING_THETAE_MAX;
+  bias = 16. * Te * Te / (5. * max_tau_scatt);
+
+  if (bias > max)
+    bias = max;
+
+  return bias * biasTuning;
+}
+
+static inline double clamp_positive(double value, double floor)
+{
+  if (!isfinite(value) || value < floor)
+  {
+    return floor;
+  }
+  return value;
+}
+
+static inline double clamp_thetae_limits(double thetae, double thetae_min, double thetae_max)
+{
+  if (!isfinite(thetae_min) || thetae_min < THETAE_MIN)
+  {
+    thetae_min = THETAE_MIN;
+  }
+
+  double thetae_upper = thetae_max;
+  if (!isfinite(thetae_upper) || thetae_upper <= 0.0)
+  {
+    thetae_upper = thetae_min;
+  }
+  thetae_upper = fmin(thetae_upper, THETAE_HARD_MAX);
+  if (thetae_upper < thetae_min)
+  {
+    thetae_upper = thetae_min;
+  }
+
+  if (!isfinite(thetae) || thetae < thetae_min)
+  {
+    thetae = thetae_min;
+  }
+  if (thetae > thetae_upper)
+  {
+    thetae = thetae_upper;
+  }
+
+  return thetae;
+}
+
+static inline double clamp_sigma(double sigma)
+{
+  if (!isfinite(sigma) || sigma < 0.0)
+  {
+    return 0.0;
+  }
+  if (sigma > SIGMA_MAX)
+  {
+    return SIGMA_MAX;
+  }
+  return sigma;
+}
+
+static inline double clamp_beta_value(double beta)
+{
+  if (!isfinite(beta) || beta < BETA_FLOOR)
+  {
+    return BETA_FLOOR;
+  }
+  return beta;
+}
+
+#ifdef DEBUG_WJET
+static void debug_wjet_abort_metric(const char *stage, const double X[NDIM],
+                                    const double gcov[NDIM][NDIM],
+                                    const double gcon[NDIM][NDIM])
+{
+  double r = 0.0;
+  double th = 0.0;
+  bl_coord(X, &r, &th);
+  fprintf(stderr, "DEBUG_WJET %s: bad metric\n", stage);
+  fprintf(stderr, "X: %g %g %g %g r=%g th=%g\n", X[0], X[1], X[2], X[3], r, th);
+  fprintf(stderr,
+          "gcov: %g %g %g %g %g %g %g %g %g %g\n",
+          gcov[0][0], gcov[0][1], gcov[0][2], gcov[0][3],
+          gcov[1][1], gcov[1][2], gcov[1][3],
+          gcov[2][2], gcov[2][3],
+          gcov[3][3]);
+  fprintf(stderr, "gcon00=%g\n", gcon[0][0]);
+  exit(EXIT_FAILURE);
+}
+
+static void debug_wjet_abort_prims(const char *stage, const double X[NDIM],
+                                  double rho, double uu, double kel,
+                                  const double Bp[NDIM], const double Vcon[NDIM])
+{
+  double r = 0.0;
+  double th = 0.0;
+  bl_coord(X, &r, &th);
+  fprintf(stderr, "DEBUG_WJET %s: bad interpolated primitives\n", stage);
+  fprintf(stderr, "X: %g %g %g %g r=%g th=%g\n", X[0], X[1], X[2], X[3], r, th);
+  fprintf(stderr, "rho=%g uu=%g kel=%g\n", rho, uu, kel);
+  fprintf(stderr, "Bp: %g %g %g\n", Bp[1], Bp[2], Bp[3]);
+  fprintf(stderr, "Vcon: %g %g %g\n", Vcon[1], Vcon[2], Vcon[3]);
+  exit(EXIT_FAILURE);
+}
+
+static void debug_wjet_abort_state(const char *stage, const double X[NDIM],
+                                  double rho, double uu, double Ne, double Thetae,
+                                  double B, double sigma, double beta, int in_jet,
+                                  const double Ucon[NDIM], const double Ucov[NDIM])
+{
+  double r = 0.0;
+  double th = 0.0;
+  double udotu = 0.0;
+  MULOOP udotu += Ucon[mu] * Ucov[mu];
+  bl_coord(X, &r, &th);
+  fprintf(stderr, "DEBUG_WJET %s: bad fluid state\n", stage);
+  fprintf(stderr, "X: %g %g %g %g r=%g th=%g\n", X[0], X[1], X[2], X[3], r, th);
+  fprintf(stderr, "rho=%g uu=%g Ne=%g Thetae=%g B=%g\n", rho, uu, Ne, Thetae, B);
+  fprintf(stderr, "sigma=%g beta=%g in_jet=%d\n", sigma, beta, in_jet);
+  fprintf(stderr, "Ucon: %g %g %g %g\n", Ucon[0], Ucon[1], Ucon[2], Ucon[3]);
+  fprintf(stderr, "Ucov: %g %g %g %g\n", Ucov[0], Ucov[1], Ucov[2], Ucov[3]);
+  fprintf(stderr, "udotu=%g\n", udotu);
+  exit(EXIT_FAILURE);
+}
+#endif
+
+static inline double constant_beta_thetae(double safe_rho, double safe_B)
+{
+  if (!(constant_beta_e0 > 0.0))
+  {
+    return 0.0;
+  }
+
+  double ne_cgs = safe_rho * Ne_unit;
+  if (!(ne_cgs > 0.0) || !isfinite(ne_cgs))
+  {
+    return 0.0;
+  }
+
+  double B_cgs = fabs(safe_B) * B_unit;
+  // See constant_beta_paper_literal above: 1 -> P_B = B^2/8pi (papers),
+  // 0 -> legacy B^2/(2(game-1)) (as-shipped, 12*pi hotter at exponent 1).
+  double energy_density;
+  if (constant_beta_paper_literal)
+  {
+    energy_density = (B_cgs * B_cgs) / (8.0 * M_PI);
+  }
+  else
+  {
+    energy_density = (B_cgs * B_cgs) / (2.0 * (game - 1.0));
+  }
+  if (!(energy_density > 0.0) || !isfinite(energy_density))
+  {
+    return 0.0;
+  }
+
+  double exponent = constant_beta_e0_exponent;
+  if (!(exponent > 0.0) || !isfinite(exponent))
+  {
+    return 0.0;
+  }
+
+  double log_term = exponent * log(energy_density);
+  if (!isfinite(log_term))
+  {
+    return 0.0;
+  }
+  const double log_term_cap = log(DBL_MAX);
+  if (log_term > log_term_cap)
+  {
+    log_term = log_term_cap;
+  }
+
+  double term = exp(log_term);
+  if (!isfinite(term) || term <= 0.0)
+  {
+    return 0.0;
+  }
+
+  double thetae_val = constant_beta_e0 * term / (ne_cgs * ME * CL * CL);
+  if (!isfinite(thetae_val) || thetae_val <= 0.0)
+  {
+    return 0.0;
+  }
+  return thetae_val;
+}
+
+static inline int in_jet_region(double safe_rho, double safe_uu, double safe_B)
+{
+  if (!(with_electrons == 4 || with_electrons == 5))
+  {
+    return 0;
+  }
+
+  double sigma = 0.0;
+  if (safe_rho > 0.0)
+  {
+    sigma = clamp_sigma(safe_B * safe_B / safe_rho);
+  }
+
+  double beta = INFINITY;
+  double denom_beta = 0.5 * safe_B * safe_B;
+  if (denom_beta > 0.0)
+  {
+    beta = safe_uu * (gam - 1.0) / denom_beta;
+  }
+
+  if (isfinite(beta))
+  {
+    beta = clamp_beta_value(beta);
+  }
+
+  double sigma_cut_val = (isfinite(jet_sigma_cut) && jet_sigma_cut > 0.0) ? jet_sigma_cut : 0.0;
+  double beta_cut_val = (isfinite(jet_beta_cut) && jet_beta_cut > 0.0) ? jet_beta_cut : 0.0;
+
+  int sigma_cut = sigma_cut_val > 0.0 && isfinite(sigma) && sigma >= sigma_cut_val;
+  int beta_cut = beta_cut_val > 0.0 && isfinite(beta) && beta <= beta_cut_val;
+
+  return sigma_cut || beta_cut;
+}
+
+double thetae_func(double uu, double rho, double B, double kel)
+{
+  const double rho_floor = 1.e-30;
+  const double uu_floor = 1.e-30;
+  const double rb_floor = 1.e-3;
+  // Matches IPOLE's flat, model-independent floor (ipole model/iharm/model.c,
+  // "Secret floor", fmax(..., 1.e-3) applied regardless of electronModel).
+  // Previously 3.e-2 here, which both diverged from IPOLE and disagreed with the
+  // THETAE_MIN comment in model.h -- see
+  // docs/audits/2026-07-23_jet_electron_temperature_audit.md, Finding M1.
+  const double crit_floor = 3.e-2;
+
+  double safe_rho = clamp_positive(rho, rho_floor);
+  double safe_uu = clamp_positive(uu, uu_floor);
+  double safe_B = fabs(isfinite(B) ? B : 0.0);
+  double safe_kel = kel;
+  if (!isfinite(safe_kel))
+  {
+    safe_kel = 0.0;
+  }
+
+  double thetae_floor = THETAE_MIN;
+  double thetae = thetae_floor;
+  double sigma = 0.0;
+  if (safe_rho > 0.0)
+  {
+    sigma = clamp_sigma(safe_B * safe_B / safe_rho);
+  }
+  int add_constant_component = (with_electrons == 4 || with_electrons == 5);
+  int in_high_sigma_region = add_constant_component && sigma_transition > 0.0 && isfinite(sigma) && sigma >= sigma_transition;
+  int in_jet = in_jet_region(safe_rho, safe_uu, safe_B);
+
+  if (with_electrons == 0)
+  {
+    // fixed tp/te ratio
+    thetae = safe_uu / safe_rho * Thetae_unit;
+  }
+  else if (with_electrons == 1)
+  {
+    // howes/kawazura model from IHARM electron thermodynamics
+    if (safe_kel < 0.0)
+    {
+      safe_kel = 0.0;
+    }
+    thetae = safe_kel * pow(safe_rho, game - 1.0) * Thetae_unit;
+  }
+  else if (with_electrons == 2 || with_electrons == 4)
+  {
+    // -------- R-Beta model --------
+    thetae_floor = fmax(thetae_floor, rb_floor);
+    double trat = trat_large;
+
+    double Bsq = safe_B * safe_B;
+    if (Bsq > 0. && isfinite(Bsq) && beta_crit > 0.)
+    {
+      double denom_beta = 0.5 * Bsq;
+      double beta = 0.0;
+      if (denom_beta > 0.)
+      {
+        beta = safe_uu * (gam - 1.0) / denom_beta;
+      }
+      if (isfinite(beta))
+      {
+        beta = clamp_beta_value(beta);
+      }
+
+      double beta_crit_sq = beta_crit * beta_crit;
+      if (isfinite(beta) && beta_crit_sq > 0.0 && isfinite(beta_crit_sq))
+      {
+        double b2 = beta * beta / beta_crit_sq;
+        if (isfinite(b2) && b2 >= 0.0)
+        {
+          double inv = 1.0 / (1.0 + b2);
+          trat = trat_large * b2 * inv + trat_small * inv;
+        }
+      }
+    }
+
+    double denom = (gamp - 1.0) + (game - 1.0) * trat;
+    if (denom > 0.0 && isfinite(denom))
+    {
+      thetae = (MP / ME) * (game - 1.0) * (gamp - 1.0) / denom * safe_uu / safe_rho;
+    }
+  }
+  else if (with_electrons == 3 || with_electrons == 5)
+  {
+    // -------- Critical-Beta model --------
+    thetae_floor = fmax(thetae_floor, crit_floor);
+    double trat;
+
+    if (safe_B <= 0.0)
+    {
+      // As beta -> 0, T_e/T_tot -> 0, so T_i/T_e is huge
+      trat = 1e10;
+    }
+    else
+    {
+      double denom_beta = 0.5 * safe_B * safe_B;
+      double beta = 0.0;
+      if (denom_beta > 0.)
+      {
+        beta = safe_uu * (gam - 1.0) / denom_beta;
+      }
+      if (isfinite(beta))
+      {
+        beta = clamp_beta_value(beta);
+      }
+      double safe_beta_crit = beta_crit;
+      if (!(safe_beta_crit > 0.0) || !isfinite(safe_beta_crit))
+      {
+        safe_beta_crit = 1.0;
+      }
+      double Te_over_Ttot = beta_crit_coefficient * exp(-beta / safe_beta_crit);
+      if (!isfinite(Te_over_Ttot) || Te_over_Ttot <= 0.0)
+      {
+        Te_over_Ttot = 1e-30;
+      }
+      if (Te_over_Ttot >= 1.0)
+      {
+        Te_over_Ttot = 1.0 - 1e-12;
+      }
+      trat = (1.0 - Te_over_Ttot) / Te_over_Ttot;
+    }
+
+    double denom = (gamp - 1.0) + (game - 1.0) * trat;
+    if (denom > 0.0 && isfinite(denom))
+    {
+      thetae = (MP / ME) * (game - 1.0) * (gamp - 1.0) / denom * safe_uu / safe_rho;
+    }
+  }
+
+  // Two independent, deliberately separate jet mechanisms exist here:
+  //   (1) in_jet / jet_sigma_cut / jet_beta_cut / jet_thetae: a hard Thetae override.
+  //       This is a GRMONTY-only extension with no IPOLE equivalent.
+  //   (2) in_high_sigma_region / sigma_transition / constant_beta_e0: an additive
+  //       supplement on top of the base disk model. This ports IPOLE's
+  //       "above sigma_transition, ADD the constant_beta_e0 temperature" rule
+  //       (ipole model/iharm/model.c, electronModel != 5 branch).
+  // Precedence is intentional: the hard override (1) wins whenever both would
+  // otherwise apply, so the two are never combined/double-counted. Do not reorder
+  // this else-if without re-checking that intent.
+  if (in_jet && jet_thetae > 0.0)
+  {
+    double thetae_upper = fmin(Thetae_max, THETAE_HARD_MAX);
+    thetae = clamp_thetae_limits(jet_thetae, thetae_floor, thetae_upper);
+  }
+  else if (in_high_sigma_region)
+  {
+    double thetae_const = constant_beta_thetae(safe_rho, safe_B);
+    if (thetae_const > 0.0)
+    {
+      thetae += thetae_const;
+    }
+  }
+
+  double thetae_upper = fmin(Thetae_max, THETAE_HARD_MAX);
+  thetae = clamp_thetae_limits(thetae, thetae_floor, thetae_upper);
+  return thetae;
+}
+
+void get_fluid_zone(int i, int j, int k, double *Ne, double *Thetae, double *B,
+                    double Ucon[NDIM], double Bcon[NDIM])
+{
+
+  double Ucov[NDIM], Bcov[NDIM];
+  double Bp[NDIM], Vcon[NDIM], Vfac, VdotV, UdotBp;
+
+  Bp[0] = 0.0;
+  Bp[1] = p[B1][i][j][k];
+  Bp[2] = p[B2][i][j][k];
+  Bp[3] = p[B3][i][j][k];
+
+  Vcon[0] = 0.0;
+  Vcon[1] = p[U1][i][j][k];
+  Vcon[2] = p[U2][i][j][k];
+  Vcon[3] = p[U3][i][j][k];
+
+  double rho = p[KRHO][i][j][k];
+  double uu = p[UU][i][j][k];
+  double kel = p[KEL][i][j][k];
+
+#ifdef DEBUG_WJET
+  double Xzone_dbg[NDIM] = {0.};
+  ijktoX(i, j, k, Xzone_dbg);
+  if (IS_BAD(rho) || IS_BAD(uu) || IS_BAD(kel) ||
+      IS_BAD(Bp[1]) || IS_BAD(Bp[2]) || IS_BAD(Bp[3]) ||
+      IS_BAD(Vcon[1]) || IS_BAD(Vcon[2]) || IS_BAD(Vcon[3]) ||
+      !(rho > 0.0) || uu < 0.0)
+  {
+    debug_wjet_abort_prims("get_fluid_zone", Xzone_dbg, rho, uu, kel, Bp, Vcon);
+  }
+#endif
+
+  // Get Ucov
+  VdotV = 0.;
+  for (int l = 1; l < NDIM; l++)
+    for (int m = 1; m < NDIM; m++)
+      VdotV += geom[i][j].gcov[l][m] * Vcon[l] * Vcon[m];
+#ifdef DEBUG_WJET
+  int bad_metric = 0;
+  MUNULOOP
+  {
+    if (IS_BAD(geom[i][j].gcov[mu][nu]) || IS_BAD(geom[i][j].gcon[mu][nu]))
+    {
+      bad_metric = 1;
+    }
+  }
+  if (bad_metric || IS_BAD(VdotV) || IS_BAD(geom[i][j].gcon[0][0]) ||
+      !(geom[i][j].gcon[0][0] < 0.0))
+  {
+    debug_wjet_abort_metric("get_fluid_zone", Xzone_dbg, geom[i][j].gcov, geom[i][j].gcon);
+  }
+#endif
+  Vfac = sqrt(-1. / geom[i][j].gcon[0][0] * (1. + fabs(VdotV)));
+  Ucon[0] = -Vfac * geom[i][j].gcon[0][0];
+  for (int l = 1; l < NDIM; l++)
+    Ucon[l] = Vcon[l] - Vfac * geom[i][j].gcon[0][l];
+  lower(Ucon, geom[i][j].gcov, Ucov);
+
+  // Get B and Bcov
+  UdotBp = 0.;
+  for (int l = 1; l < NDIM; l++)
+    UdotBp += Ucov[l] * Bp[l];
+  Bcon[0] = UdotBp;
+  for (int l = 1; l < NDIM; l++)
+    Bcon[l] = (Bp[l] + Ucon[l] * UdotBp) / Ucon[0];
+  lower(Bcon, geom[i][j].gcov, Bcov);
+
+  *B = sqrt(Bcon[0] * Bcov[0] + Bcon[1] * Bcov[1] +
+            Bcon[2] * Bcov[2] + Bcon[3] * Bcov[3]) *
+       B_unit;
+
+  *Ne = rho * Ne_unit;
+  *Thetae = thetae_func(uu, rho, (*B) / B_unit, kel);
+
+  double sig_unscaled = pow((*B) / B_unit, 2) / ((*Ne) / Ne_unit);
+  if (with_electrons < 3 && sig_unscaled > 1.)
+    *Thetae = SMALL;
+
+  if (in_jet_region(rho, uu, (*B) / B_unit) && jet_ne_mult != 1.0)
+  {
+    *Ne *= jet_ne_mult;
+  }
+
+  double thetae_upper = fmin(Thetae_max, THETAE_HARD_MAX);
+  *Thetae = clamp_thetae_limits(*Thetae, THETAE_MIN, thetae_upper);
+
+#ifdef DEBUG_WJET
+  double safe_rho = clamp_positive(rho, 1.e-30);
+  double safe_uu = clamp_positive(uu, 1.e-30);
+  double B_code = (*B) / B_unit;
+  double safe_B = fabs(isfinite(B_code) ? B_code : 0.0);
+  double sigma = 0.0;
+  if (safe_rho > 0.0)
+  {
+    sigma = clamp_sigma(safe_B * safe_B / safe_rho);
+  }
+  double beta = INFINITY;
+  double denom_beta = 0.5 * safe_B * safe_B;
+  if (denom_beta > 0.0)
+  {
+    beta = safe_uu * (gam - 1.0) / denom_beta;
+  }
+  if (isfinite(beta))
+  {
+    beta = clamp_beta_value(beta);
+  }
+  double udotu = 0.0;
+  MULOOP udotu += Ucon[mu] * Ucov[mu];
+  int in_jet = in_jet_region(safe_rho, safe_uu, safe_B);
+  if (IS_BAD(*B) || IS_BAD(*Thetae) || !(*Thetae > 0.0) ||
+      IS_BAD(*Ne) || !(*Ne >= 0.0) ||
+      IS_BAD(sigma) || IS_BAD(beta) ||
+      IS_BAD(udotu) || fabs(udotu + 1.0) > 1e-2)
+  {
+    debug_wjet_abort_state("get_fluid_zone", Xzone_dbg, rho, uu, *Ne, *Thetae,
+                           *B, sigma, beta, in_jet, Ucon, Ucov);
+  }
+  wjet_debug_update(Xzone_dbg, rho, uu, *Ne, *Thetae, *B, sigma, beta, in_jet,
+                    with_electrons, sigma_transition, constant_beta_e0,
+                    constant_beta_e0_exponent, jet_sigma_cut, jet_beta_cut,
+                    jet_thetae, jet_ne_mult);
+#endif
+}
+
+void get_fluid_params(const double X[NDIM], double gcov[NDIM][NDIM], double *Ne,
+                      double *Thetae, double *B, double Ucon[NDIM],
+                      double Ucov[NDIM], double Bcon[NDIM],
+                      double Bcov[NDIM])
+{
+  double rho, kel, uu;
+  double Bp[NDIM], Vcon[NDIM], Vfac, VdotV, UdotBp;
+  double gcon[NDIM][NDIM];
+  double interp_scalar(const double X[NDIM], double ***var);
+
+#ifdef DEBUG_WJET
+  if (IS_BAD(X[0]) || IS_BAD(X[1]) || IS_BAD(X[2]) || IS_BAD(X[3]))
+  {
+    fprintf(stderr, "DEBUG_WJET get_fluid_params: invalid X\n");
+    fprintf(stderr, "X: %g %g %g %g\n", X[0], X[1], X[2], X[3]);
+    exit(EXIT_FAILURE);
+  }
+#endif
+
+  if (X_in_domain(X) == 0)
+  {
+#ifdef DEBUG_WJET
+    static int warned = 0;
+    if (!warned)
+    {
+      fprintf(stderr, "DEBUG_WJET get_fluid_params: X outside domain (returning zeros)\n");
+      fprintf(stderr, "X: %g %g %g %g\n", X[0], X[1], X[2], X[3]);
+      warned = 1;
+    }
+#endif
+    *Ne = 0.0;
+    *Thetae = 0.0;
+    *B = 0.0;
+    for (int mu = 0; mu < NDIM; mu++)
+    {
+      Ucon[mu] = 0.0;
+      Ucov[mu] = 0.0;
+      Bcon[mu] = 0.0;
+      Bcov[mu] = 0.0;
+    }
+    return;
+  }
+
+  rho = interp_scalar(X, p[KRHO]);
+  kel = interp_scalar(X, p[KEL]);
+  uu = interp_scalar(X, p[UU]);
+
+  Bp[0] = 0.0;
+  Bp[1] = interp_scalar(X, p[B1]);
+  Bp[2] = interp_scalar(X, p[B2]);
+  Bp[3] = interp_scalar(X, p[B3]);
+
+  Vcon[0] = 0.0;
+  Vcon[1] = interp_scalar(X, p[U1]);
+  Vcon[2] = interp_scalar(X, p[U2]);
+  Vcon[3] = interp_scalar(X, p[U3]);
+
+#ifdef DEBUG_WJET
+  if (IS_BAD(rho) || IS_BAD(uu) || IS_BAD(kel) ||
+      IS_BAD(Bp[1]) || IS_BAD(Bp[2]) || IS_BAD(Bp[3]) ||
+      IS_BAD(Vcon[1]) || IS_BAD(Vcon[2]) || IS_BAD(Vcon[3]) ||
+      !(rho > 0.0) || uu < 0.0)
+  {
+    debug_wjet_abort_prims("get_fluid_params", X, rho, uu, kel, Bp, Vcon);
+  }
+#endif
+
+  gcov_func(X, gcov);
+  gcon_func(gcov, gcon);
+
+#ifdef DEBUG_WJET
+  int bad_metric = 0;
+  MUNULOOP
+  {
+    if (IS_BAD(gcov[mu][nu]) || IS_BAD(gcon[mu][nu]))
+    {
+      bad_metric = 1;
+    }
+  }
+  if (bad_metric || IS_BAD(gcon[0][0]) || !(gcon[0][0] < 0.0))
+  {
+    debug_wjet_abort_metric("get_fluid_params", X, gcov, gcon);
+  }
+#endif
+
+  // Get Ucov
+  VdotV = 0.;
+  for (int i = 1; i < NDIM; i++)
+    for (int j = 1; j < NDIM; j++)
+      VdotV += gcov[i][j] * Vcon[i] * Vcon[j];
+#ifdef DEBUG_WJET
+  if (IS_BAD(VdotV))
+  {
+    debug_wjet_abort_metric("get_fluid_params", X, gcov, gcon);
+  }
+#endif
+  Vfac = sqrt(-1. / gcon[0][0] * (1. + fabs(VdotV)));
+  Ucon[0] = -Vfac * gcon[0][0];
+  for (int i = 1; i < NDIM; i++)
+    Ucon[i] = Vcon[i] - Vfac * gcon[0][i];
+  lower(Ucon, gcov, Ucov);
+
+  // Get B and Bcov
+  UdotBp = 0.;
+  for (int i = 1; i < NDIM; i++)
+    UdotBp += Ucov[i] * Bp[i];
+  Bcon[0] = UdotBp;
+  for (int i = 1; i < NDIM; i++)
+    Bcon[i] = (Bp[i] + Ucon[i] * UdotBp) / Ucon[0];
+  lower(Bcon, gcov, Bcov);
+
+  *B = sqrt(Bcon[0] * Bcov[0] + Bcon[1] * Bcov[1] +
+            Bcon[2] * Bcov[2] + Bcon[3] * Bcov[3]) *
+       B_unit;
+
+  double Ne_local = rho * Ne_unit;
+  *Thetae = thetae_func(uu, rho, (*B) / B_unit, kel);
+
+  double sig_unscaled = pow((*B) / B_unit, 2) / (Ne_local / Ne_unit);
+  if (with_electrons < 3 && sig_unscaled > 1.)
+    *Thetae = SMALL;
+
+  if (in_jet_region(rho, uu, (*B) / B_unit) && jet_ne_mult != 1.0)
+  {
+    Ne_local *= jet_ne_mult;
+  }
+
+  *Ne = Ne_local;
+  double thetae_upper = fmin(Thetae_max, THETAE_HARD_MAX);
+  *Thetae = clamp_thetae_limits(*Thetae, THETAE_MIN, thetae_upper);
+
+#ifdef DEBUG_WJET
+  double safe_rho = clamp_positive(rho, 1.e-30);
+  double safe_uu = clamp_positive(uu, 1.e-30);
+  double B_code = (*B) / B_unit;
+  double safe_B = fabs(isfinite(B_code) ? B_code : 0.0);
+  double sigma = 0.0;
+  if (safe_rho > 0.0)
+  {
+    sigma = clamp_sigma(safe_B * safe_B / safe_rho);
+  }
+  double beta = INFINITY;
+  double denom_beta = 0.5 * safe_B * safe_B;
+  if (denom_beta > 0.0)
+  {
+    beta = safe_uu * (gam - 1.0) / denom_beta;
+  }
+  if (isfinite(beta))
+  {
+    beta = clamp_beta_value(beta);
+  }
+  double udotu = 0.0;
+  MULOOP udotu += Ucon[mu] * Ucov[mu];
+  int in_jet = in_jet_region(safe_rho, safe_uu, safe_B);
+  if (IS_BAD(*B) || IS_BAD(*Thetae) || !(*Thetae > 0.0) ||
+      IS_BAD(*Ne) || !(*Ne >= 0.0) ||
+      IS_BAD(sigma) || IS_BAD(beta) ||
+      IS_BAD(udotu) || fabs(udotu + 1.0) > 1e-2)
+  {
+    debug_wjet_abort_state("get_fluid_params", X, rho, uu, *Ne, *Thetae,
+                           *B, sigma, beta, in_jet, Ucon, Ucov);
+  }
+  wjet_debug_update(X, rho, uu, *Ne, *Thetae, *B, sigma, beta, in_jet,
+                    with_electrons, sigma_transition, constant_beta_e0,
+                    constant_beta_e0_exponent, jet_sigma_cut, jet_beta_cut,
+                    jet_thetae, jet_ne_mult);
+#endif
+}
+
+////////////////////////////////// COORDINATES /////////////////////////////////
+
+void gcov_func(const double X[NDIM], double gcov[NDIM][NDIM])
+{
+  // despite the name, get equivalent values for
+  // r, th for KS coordinates
+  double r, th;
+  bl_coord(X, &r, &th);
+
+  // compute ks metric
+  double gcovKS[NDIM][NDIM];
+  gcov_ks(r, th, gcovKS);
+
+  // Apply coordinate transformation to code coordinates X
+  double dxdX[NDIM][NDIM];
+  set_dxdX(X, dxdX);
+
+  MUNULOOP
+  {
+    gcov[mu][nu] = 0.;
+    for (int lam = 0; lam < NDIM; lam++)
+    {
+      for (int kap = 0; kap < NDIM; kap++)
+      {
+        gcov[mu][nu] += gcovKS[lam][kap] * dxdX[lam][mu] * dxdX[kap][nu];
+      }
+    }
+  }
+}
+
+// warning: this function assumes startx = 0 and stopx = 1 (that we bin evenly in BL)
+double dOmega_func(int j)
+{
+  double dx2 = M_PI / 2. / N_THBINS;
+  double thi = j * dx2;
+  double thf = (j + 1) * dx2;
+
+  return 2. * M_PI * (-cos(thf) + cos(thi));
+}
+
+//////////////////////////////// INITIALIZATION ////////////////////////////////
+
+#include <hdf5.h>
+#include <hdf5_hl.h>
+
+void init_data(int argc, char *argv[], Params *params)
+{
+  const char *fname = NULL;
+  double dV, V;
+  int nprims = 0;
+
+  NPRIM = 10;
+
+  if (params->loaded && strlen(params->dump) > 0)
+  {
+    fname = params->dump;
+    trat_small = params->trat_small;
+    trat_large = params->trat_large;
+    beta_crit = params->beta_crit;
+    beta_crit_coefficient = params->beta_crit_coefficient;
+    with_electrons = params->with_electrons;
+    biasTuning = params->biasTuning;
+    double thetae_cap = params->Thetae_max;
+    if (!isfinite(thetae_cap) || thetae_cap <= THETAE_MIN)
+    {
+      thetae_cap = THETAE_HARD_MAX;
+    }
+    Thetae_max = fmin(thetae_cap, THETAE_HARD_MAX);
+    sigma_transition = params->sigma_transition;
+    constant_beta_e0 = params->constant_beta_e0;
+    constant_beta_e0_exponent = params->constant_beta_e0_exponent;
+    constant_beta_paper_literal = params->constant_beta_paper_literal;
+    jet_sigma_cut = params->jet_sigma_cut;
+    jet_beta_cut = params->jet_beta_cut;
+    jet_thetae = params->jet_thetae;
+    jet_ne_mult = params->jet_ne_mult;
+  }
+  else
+  {
+    fname = argv[2];
+    strncpy((char *)params->dump, argv[2], 255);
+  }
+
+  if (hdf5_open((char *)fname) < 0)
+  {
+    fprintf(stderr, "File %s does not exist! Exiting...\n", fname);
+    exit(-1);
+  }
+
+  // get dump info to copy to grmonty output
+  fluid_header = hdf5_get_blob("/header");
+
+  // read header
+  hdf5_set_directory("/header/");
+
+  // flag reads
+  int with_electrons_overwrite = 0;
+  with_radiation = 0;
+  with_derefine_poles = 0;
+  if (hdf5_exists("has_electrons"))
+    hdf5_read_single_val(&with_electrons_overwrite, "has_electrons", H5T_STD_I32LE);
+  if (hdf5_exists("has_radiation"))
+    hdf5_read_single_val(&with_radiation, "has_radiation", H5T_STD_I32LE);
+
+  // read geometry
+  with_derefine_poles = 0;
+  METRIC_MKS3 = 0;
+  char metric_name[20];
+  hid_t string_type = hdf5_make_str_type(20);
+  hdf5_read_single_val(&metric_name, "metric", string_type);
+  if (strncmp(metric_name, "MMKS", 19) == 0 || strncmp(metric_name, "FMKS", 19) == 0)
+  {
+    with_derefine_poles = 1;
+  }
+  else if (strncmp(metric_name, "MKS3", 19) == 0)
+  {
+    METRIC_eKS = 1;
+    METRIC_MKS3 = 1;
+    fprintf(stderr, "using eKS metric with exotic \"MKS3\" zones...\n");
+  }
+
+  hdf5_read_single_val(&nprims, "n_prim", H5T_STD_I32LE);
+  hdf5_read_single_val(&N1, "n1", H5T_STD_I32LE);
+  hdf5_read_single_val(&N2, "n2", H5T_STD_I32LE);
+  hdf5_read_single_val(&N3, "n3", H5T_STD_I32LE);
+  hdf5_read_single_val(&gam, "gam", H5T_IEEE_F64LE);
+
+  // conditional reads
+  game = 4. / 3;
+  gamp = 5. / 3;
+  if (with_electrons_overwrite)
+  {
+    fprintf(stderr, "custom electron model loaded...\n");
+    hdf5_read_single_val(&game, "gam_e", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&gamp, "gam_p", H5T_IEEE_F64LE);
+    with_electrons = with_electrons_overwrite;
+  }
+
+  if (with_electrons == 0)
+  {
+    with_electrons = 0; // force TP_OVER_TE to overwrite electron temperatures
+    fprintf(stderr, "using fixed tp_over_te ratio = %g\n", tp_over_te);
+    Thetae_unit = MP / ME * (gam - 1.) / (1. + tp_over_te);
+    Thetae_unit = 2. / 3. * MP / ME / (2. + tp_over_te);
+  }
+  else if (with_electrons == 2 || with_electrons == 4)
+  {
+    Thetae_unit = 2. / 3. * MP / ME / 5.;
+    if (with_electrons == 4)
+    {
+      fprintf(stderr,
+              "using mixed tp_over_te with trat_small = %g, trat_large = %g, sigma_transition = %g, "
+              "constant_beta_e0 = %g, constant_beta_e0_exponent = %g, jet_sigma_cut = %g, "
+              "jet_beta_cut = %g, jet_thetae = %g, jet_ne_mult = %g\n",
+              trat_small, trat_large, sigma_transition, constant_beta_e0, constant_beta_e0_exponent,
+              jet_sigma_cut, jet_beta_cut, jet_thetae, jet_ne_mult);
+    }
+    else
+    {
+      fprintf(stderr, "using mixed tp_over_te with trat_small = %g and trat_large = %g\n", trat_small, trat_large);
+    }
+  }
+  else if (with_electrons == 3 || with_electrons == 5)
+  {
+    Thetae_unit = 2. / 3. * MP / ME / 5.;
+    if (with_electrons == 5)
+    {
+      fprintf(stderr,
+              "using critical beta tp_over_te with beta_crit_coefficient = %g, beta_crit = %g, "
+              "sigma_transition = %g, constant_beta_e0 = %g, constant_beta_e0_exponent = %g, "
+              "jet_sigma_cut = %g, jet_beta_cut = %g, jet_thetae = %g, jet_ne_mult = %g\n",
+              beta_crit_coefficient, beta_crit, sigma_transition, constant_beta_e0, constant_beta_e0_exponent,
+              jet_sigma_cut, jet_beta_cut, jet_thetae, jet_ne_mult);
+    }
+    else
+    {
+      fprintf(stderr, "using critical beta tp_over_te with beta_crit_coefficient = %g and beta_crit = %g\n",
+              beta_crit_coefficient, beta_crit);
+    }
+  }
+  else
+  {
+    fprintf(stderr, "! unsupported electron model selection (with_electrons = %d)\n", with_electrons);
+    exit(-3);
+  }
+  if (with_electrons == 4 || with_electrons == 5)
+  {
+    fprintf(stderr, "constant-beta P_B form: %s\n",
+            constant_beta_paper_literal
+                ? "paper-literal B^2/8pi (constant_beta_paper_literal = 1)"
+                : "legacy B^2/(2(game-1)) (12*pi hotter than papers; constant_beta_paper_literal = 0)");
+  }
+
+  if (with_radiation)
+  {
+    fprintf(stderr, "custom radiation field tracking information loaded...\n");
+    hdf5_set_directory("/header/units/");
+    hdf5_read_single_val(&M_unit, "M_unit", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&T_unit, "T_unit", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&L_unit, "L_unit", H5T_IEEE_F64LE);
+    if (with_electrons == 1)
+    {
+      hdf5_read_single_val(&Thetae_unit, "Thetae_unit", H5T_IEEE_F64LE);
+    }
+    hdf5_read_single_val(&MBH, "Mbh", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&TP_OVER_TE, "tp_over_te", H5T_IEEE_F64LE);
+  }
+  else
+  {
+    if (!params->loaded)
+    {
+      report_bad_input(argc);
+      sscanf(argv[3], "%lf", &M_unit);
+      sscanf(argv[4], "%lf", &MBH);
+      sscanf(argv[5], "%lf", &TP_OVER_TE);
+    }
+    else
+    {
+      M_unit = params->M_unit;
+      MBH = params->MBH;
+      TP_OVER_TE = params->TP_OVER_TE;
+    }
+    MBH *= MSUN;
+    L_unit = GNEWT * MBH / (CL * CL);
+    T_unit = L_unit / CL;
+  }
+
+  hdf5_set_directory("/header/geom/");
+  hdf5_read_single_val(&startx[1], "startx1", H5T_IEEE_F64LE);
+  hdf5_read_single_val(&startx[2], "startx2", H5T_IEEE_F64LE);
+  hdf5_read_single_val(&startx[3], "startx3", H5T_IEEE_F64LE);
+  hdf5_read_single_val(&dx[1], "dx1", H5T_IEEE_F64LE);
+  hdf5_read_single_val(&dx[2], "dx2", H5T_IEEE_F64LE);
+  hdf5_read_single_val(&dx[3], "dx3", H5T_IEEE_F64LE);
+
+  hdf5_set_directory("/header/geom/mks/");
+  if (with_derefine_poles)
+    hdf5_set_directory("/header/geom/mmks/");
+  if (METRIC_MKS3)
+  {
+    hdf5_set_directory("/header/geom/mks3/");
+    hdf5_read_single_val(&a, "a", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&mks3R0, "R0", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&mks3H0, "H0", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&mks3MY1, "MY1", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&mks3MY2, "MY2", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&mks3MP0, "MP0", H5T_IEEE_F64LE);
+    Rout = 100.;
+  }
+  else
+  {
+    hdf5_read_single_val(&a, "a", H5T_IEEE_F64LE);
+    hdf5_read_single_val(&hslope, "hslope", H5T_IEEE_F64LE);
+    if (hdf5_exists("Rin"))
+    {
+      hdf5_read_single_val(&Rin, "Rin", H5T_IEEE_F64LE);
+      hdf5_read_single_val(&Rout, "Rout", H5T_IEEE_F64LE);
+    }
+    else
+    {
+      hdf5_read_single_val(&Rin, "r_in", H5T_IEEE_F64LE);
+      hdf5_read_single_val(&Rout, "r_out", H5T_IEEE_F64LE);
+    }
+    if (with_derefine_poles)
+    {
+      fprintf(stderr, "custom refinement at poles loaded...\n");
+      hdf5_read_single_val(&poly_xt, "poly_xt", H5T_IEEE_F64LE);
+      hdf5_read_single_val(&poly_alpha, "poly_alpha", H5T_IEEE_F64LE);
+      hdf5_read_single_val(&mks_smooth, "mks_smooth", H5T_IEEE_F64LE);
+      poly_norm = 0.5 * M_PI * 1. / (1. + 1. / (poly_alpha + 1.) * 1. / pow(poly_xt, poly_alpha));
+    }
+  }
+
+  // Set other geometry
+  stopx[0] = 1.;
+  stopx[1] = startx[1] + N1 * dx[1];
+  stopx[2] = startx[2] + N2 * dx[2];
+  stopx[3] = startx[3] + N3 * dx[3];
+
+  // Set remaining units and constants
+  RHO_unit = M_unit / pow(L_unit, 3);
+  U_unit = RHO_unit * CL * CL;
+  B_unit = CL * sqrt(4. * M_PI * RHO_unit);
+  Ne_unit = RHO_unit / (MP + ME);
+  max_tau_scatt = (6. * L_unit) * RHO_unit * 0.4; // this doesn't make sense ...
+  max_tau_scatt = 0.0001;                         // TODO look at this in the future and figure out a smarter general value
+
+  // Horizon and "max R for geodesic tracking" in KS coordinates
+  Rh = 1. + sqrt(1. - a * a);
+  Rmax = 1000;
+
+  fprintf(stderr, "L_unit, T_unit, M_unit = %g %g %g\n", L_unit, T_unit, M_unit);
+  fprintf(stderr, "B_unit, Ne_unit, RHO_unit = %g %g %g\n", B_unit, Ne_unit, RHO_unit);
+  fprintf(stderr, "Thetae_unit = %g\n", Thetae_unit);
+
+  // Allocate storage and set geometry
+  double ****malloc_rank4_double(int n1, int n2, int n3, int n4);
+  p = malloc_rank4_double(NVAR, N1, N2, N3);
+  fprintf(stderr, "NVAR N1 N2 N3 = %i %i %i %i\n", NVAR, N1, N2, N3);
+  n2gens = (double ***)malloc_rank3(N1, N2, N3, sizeof(double));
+  geom = (struct of_geom **)malloc_rank2(N1, N2, sizeof(struct of_geom));
+  tetrads = (struct of_tetrads ***)malloc_rank3(N1, N2, N3, sizeof(struct of_tetrads));
+  init_geometry();
+
+  // Read prims.
+  // Assume standard ordering in iharm dump file, especially for
+  // electron variables...
+  hdf5_set_directory("/");
+
+  hsize_t fdims[] = {N1, N2, N3, nprims};
+  hsize_t fstart[] = {0, 0, 0, 0}; //{global_start[0], global_start[1], global_start[2], 0};
+  hsize_t fcount[] = {N1, N2, N3, 1};
+  hsize_t mstart[] = {0, 0, 0, 0};
+
+  fstart[3] = 0;
+  hdf5_read_array(p[KRHO][0][0], "prims", 4, fdims, fstart, fcount, fcount, mstart, H5T_IEEE_F64LE);
+  fstart[3] = 1;
+  hdf5_read_array(p[UU][0][0], "prims", 4, fdims, fstart, fcount, fcount, mstart, H5T_IEEE_F64LE);
+  fstart[3] = 2;
+  hdf5_read_array(p[U1][0][0], "prims", 4, fdims, fstart, fcount, fcount, mstart, H5T_IEEE_F64LE);
+  fstart[3] = 3;
+  hdf5_read_array(p[U2][0][0], "prims", 4, fdims, fstart, fcount, fcount, mstart, H5T_IEEE_F64LE);
+  fstart[3] = 4;
+  hdf5_read_array(p[U3][0][0], "prims", 4, fdims, fstart, fcount, fcount, mstart, H5T_IEEE_F64LE);
+  fstart[3] = 5;
+  hdf5_read_array(p[B1][0][0], "prims", 4, fdims, fstart, fcount, fcount, mstart, H5T_IEEE_F64LE);
+  fstart[3] = 6;
+  hdf5_read_array(p[B2][0][0], "prims", 4, fdims, fstart, fcount, fcount, mstart, H5T_IEEE_F64LE);
+  fstart[3] = 7;
+  hdf5_read_array(p[B3][0][0], "prims", 4, fdims, fstart, fcount, fcount, mstart, H5T_IEEE_F64LE);
+
+  if (with_electrons == 1)
+  {
+
+    fstart[3] = 8;
+    hdf5_read_array(p[KEL][0][0], "prims", 4, fdims, fstart, fcount, fcount, mstart, H5T_IEEE_F64LE);
+
+    fstart[3] = 9;
+    hdf5_read_array(p[KTOT][0][0], "prims", 4, fdims, fstart, fcount, fcount, mstart, H5T_IEEE_F64LE);
+  }
+
+  hdf5_close();
+
+  V = dMact = Ladv = 0.;
+  dV = dx[1] * dx[2] * dx[3];
+  ZLOOP
+  {
+
+    V += dV * geom[i][j].gzone;
+
+    double Ne, Thetae, Bmag, Ucon[NDIM], Ucov[NDIM], Bcon[NDIM];
+    get_fluid_zone(i, j, k, &Ne, &Thetae, &Bmag, Ucon, Bcon);
+
+    bias_norm += dV * geom[i][j].gzone * Thetae * Thetae;
+
+    if (10 <= i && i <= 20)
+    {
+      lower(Ucon, geom[i][j].gcov, Ucov);
+      dMact += geom[i][j].gzone * dx[2] * dx[3] * p[KRHO][i][j][k] * Ucon[1];
+      Ladv += geom[i][j].gzone * dx[2] * dx[3] * p[UU][i][j][k] * Ucon[1] * Ucov[0];
+    }
+  }
+
+  dMact /= 11.;
+  Ladv /= 1.;
+  bias_norm /= V;
+  fprintf(stderr, "dMact: %g, Ladv: %g\n", dMact, Ladv);
+
+  init_tetrads();
+
+  // P2.2 regression hook: dump every zone's Thetae to a flat binary file (row-major
+  // i,j,k, N1*N2*N3 doubles) for comparison against the baseline tree's field.
+  // Temporary; gated behind an env var, no-op for normal runs.
+  {
+    const char *dumpf = getenv("GRMONTY_DEBUG_DUMP_THETAE");
+    if (dumpf != NULL)
+    {
+      FILE *df = fopen(dumpf, "wb");
+      if (df != NULL)
+      {
+        for (int di = 0; di < N1; di++)
+        {
+          for (int dj = 0; dj < N2; dj++)
+          {
+            for (int dk = 0; dk < N3; dk++)
+            {
+              double Ne, Thetae, Bmag, Ucon[NDIM], Bcon[NDIM];
+              get_fluid_zone(di, dj, dk, &Ne, &Thetae, &Bmag, Ucon, Bcon);
+              fwrite(&Thetae, sizeof(double), 1, df);
+            }
+          }
+        }
+        fclose(df);
+        fprintf(stderr, "GRMONTY_DEBUG_DUMP_THETAE wrote %d x %d x %d doubles to %s\n",
+                N1, N2, N3, dumpf);
+      }
+      exit(0);
+    }
+  }
+
+  // P2.5 follow-up: scan every zone for a non-finite Thetae/Ne/B and report the first
+  // few offenders, so a NaN found downstream (e.g. in report_spectrum's dL sum) can be
+  // traced back to its actual zone instead of guessed at from reading the formula.
+  // Gated behind an env var; no-op for normal runs.
+  {
+    const char *dbgscan = getenv("GRMONTY_DEBUG_SCAN");
+    if (dbgscan != NULL)
+    {
+      long total = 0, bad = 0;
+      int reported = 0;
+      const int max_report = 20;
+      for (int di = 0; di < N1; di++)
+      {
+        for (int dj = 0; dj < N2; dj++)
+        {
+          for (int dk = 0; dk < N3; dk++)
+          {
+            total++;
+            double Ne, Thetae, Bmag, Ucon[NDIM], Bcon[NDIM];
+            get_fluid_zone(di, dj, dk, &Ne, &Thetae, &Bmag, Ucon, Bcon);
+            if (!isfinite(Ne) || !isfinite(Thetae) || !isfinite(Bmag))
+            {
+              bad++;
+              if (reported < max_report)
+              {
+                double rho = p[KRHO][di][dj][dk];
+                double uu = p[UU][di][dj][dk];
+                double kel = p[KEL][di][dj][dk];
+                fprintf(stderr,
+                        "GRMONTY_DEBUG_SCAN bad zone i=%d j=%d k=%d: rho=%.15e uu=%.15e "
+                        "kel=%.15e Ne=%.15e Thetae=%.15e B=%.15e\n",
+                        di, dj, dk, rho, uu, kel, Ne, Thetae, Bmag);
+                reported++;
+              }
+            }
+          }
+        }
+      }
+      fprintf(stderr, "GRMONTY_DEBUG_SCAN done: total=%ld bad=%ld (with_electrons=%d)\n",
+              total, bad, with_electrons);
+      exit(0);
+    }
+  }
+
+  // P2.1 validation hook: report one zone's fluid/electron quantities and exit, for
+  // cross-checking against an independent recomputation of the audited Thetae formula.
+  // Gated behind an env var so it's a no-op for normal runs. See
+  // docs/2026-07-23_jet_implementation_changes.md sec 9 (P2.1).
+  {
+    const char *dbgzone = getenv("GRMONTY_DEBUG_ZONE");
+    if (dbgzone != NULL)
+    {
+      int di, dj, dk;
+      if (sscanf(dbgzone, "%d,%d,%d", &di, &dj, &dk) == 3 &&
+          di >= 0 && di < N1 && dj >= 0 && dj < N2 && dk >= 0 && dk < N3)
+      {
+        double Ne, Thetae, Bmag, Ucon[NDIM], Bcon[NDIM];
+        get_fluid_zone(di, dj, dk, &Ne, &Thetae, &Bmag, Ucon, Bcon);
+        double rho = p[KRHO][di][dj][dk];
+        double uu = p[UU][di][dj][dk];
+        double B_code = Bmag / B_unit;
+        double sigma = (B_code * B_code) / rho;
+        double beta = uu * (gam - 1.) / (0.5 * B_code * B_code);
+        fprintf(stderr,
+                "GRMONTY_DEBUG_ZONE i=%d j=%d k=%d: rho_code=%.15e uu_code=%.15e "
+                "B_code=%.15e Ne_cgs=%.15e Thetae=%.15e B_G=%.15e sigma=%.15e beta=%.15e\n",
+                di, dj, dk, rho, uu, B_code, Ne, Thetae, Bmag, sigma, beta);
+      }
+      else
+      {
+        fprintf(stderr,
+                "GRMONTY_DEBUG_ZONE: could not parse '%s' as 'i,j,k' in range "
+                "[0,%d)x[0,%d)x[0,%d)\n",
+                dbgzone, N1, N2, N3);
+      }
+      exit(0);
+    }
+  }
+}
+
+//////////////////////////////////// OUTPUT ////////////////////////////////////
+
+void report_spectrum(int N_superph_made, Params *params)
+{
+
+  hid_t fid = -1;
+
+  if (params->loaded && strlen(params->spectrum) > 0)
+  {
+    fid = H5Fcreate(params->spectrum, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+  }
+  else
+  {
+    fid = H5Fcreate("spectrum.h5", H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+  }
+
+  if (fid < 0)
+  {
+    fprintf(stderr, "! unable to open/create spectrum hdf5 file.\n");
+    exit(-3);
+  }
+
+  h5io_add_attribute_str(fid, "/", "githash", xstr(VERSION));
+
+  h5io_add_blob(fid, "/fluid_header", fluid_header);
+  hdf5_close_blob(fluid_header);
+
+  h5io_add_group(fid, "/params");
+
+#if CUSTOM_AVG == 1
+  h5io_add_data_dbl(fid, "/params/CA_MIN_FREQ", CA_MIN_FREQ);
+  h5io_add_data_dbl(fid, "/params/CA_MAX_FREQ", CA_MAX_FREQ);
+  h5io_add_data_dbl(fid, "/params/CA_MIN_QTY", CA_MIN_QTY);
+  h5io_add_data_dbl(fid, "/params/CA_MAX_QTY", CA_MAX_QTY);
+  h5io_add_data_dbl(fid, "/params/CA_NBINS", CA_NBINS);
+#endif // CUSTOM_AVG
+
+  h5io_add_data_dbl(fid, "/params/NUCUT", NUCUT);
+  h5io_add_data_dbl(fid, "/params/GAMMACUT", GAMMACUT);
+  h5io_add_data_dbl(fid, "/params/NUMAX", NUMAX);
+  h5io_add_data_dbl(fid, "/params/NUMIN", NUMIN);
+  h5io_add_data_dbl(fid, "/params/LNUMAX", LNUMAX);
+  h5io_add_data_dbl(fid, "/params/LNUMIN", LNUMIN);
+  h5io_add_data_dbl(fid, "/params/DLNU", DLNU);
+  h5io_add_data_dbl(fid, "/params/THETAE_MIN", THETAE_MIN);
+  h5io_add_data_dbl(fid, "/params/THETAE_MAX", Thetae_max);
+  h5io_add_data_dbl(fid, "/params/TP_OVER_TE", TP_OVER_TE);
+  h5io_add_data_dbl(fid, "/params/WEIGHT_MIN", WEIGHT_MIN);
+  h5io_add_data_dbl(fid, "/params/KAPPA", model_kappa);
+  h5io_add_data_dbl(fid, "/params/L_unit", L_unit);
+  h5io_add_data_dbl(fid, "/params/T_unit", T_unit);
+  h5io_add_data_dbl(fid, "/params/M_unit", M_unit);
+  h5io_add_data_dbl(fid, "/params/B_unit", B_unit);
+  h5io_add_data_dbl(fid, "/params/Ne_unit", Ne_unit);
+  h5io_add_data_dbl(fid, "/params/RHO_unit", RHO_unit);
+  h5io_add_data_dbl(fid, "/params/U_unit", U_unit);
+  h5io_add_data_dbl(fid, "/params/Thetae_unit", Thetae_unit);
+  h5io_add_data_dbl(fid, "/params/MBH", MBH);
+  h5io_add_data_dbl(fid, "/params/a", a);
+  h5io_add_data_dbl(fid, "/params/Rin", Rin);
+  h5io_add_data_dbl(fid, "/params/Rout", Rout);
+  h5io_add_data_dbl(fid, "/params/hslope", hslope);
+  h5io_add_data_dbl(fid, "/params/t", t);
+  h5io_add_data_dbl(fid, "/params/bias", biasTuning);
+  h5io_add_data_dbl(fid, "/params/bias_abort_ratio_limit", BIAS_ABORT_RATIO);
+
+  h5io_add_data_int(fid, "/params/SYNCHROTRON", SYNCHROTRON);
+  h5io_add_data_int(fid, "/params/BREMSSTRAHLUNG", BREMSSTRAHLUNG);
+  h5io_add_data_int(fid, "/params/COMPTON", COMPTON);
+  h5io_add_data_int(fid, "/params/DIST_KAPPA", MODEL_EDF == EDF_KAPPA_FIXED ? 1 : 0);
+  h5io_add_data_int(fid, "/params/N_ESAMP", N_ESAMP);
+  h5io_add_data_int(fid, "/params/N_EBINS", N_EBINS);
+  h5io_add_data_int(fid, "/params/N_THBINS", N_THBINS);
+  h5io_add_data_int(fid, "/params/N1", N1);
+  h5io_add_data_int(fid, "/params/N2", N2);
+  h5io_add_data_int(fid, "/params/N3", N3);
+  h5io_add_data_int(fid, "/params/Ns", Ns);
+
+  h5io_add_data_str(fid, "/params/dump", params->dump);
+  h5io_add_data_str(fid, "/params/model", xstr(MODEL));
+
+  h5io_add_group(fid, "/params/electrons");
+  h5io_add_data_dbl(fid, "/params/electrons/positron_ratio", positron_ratio);
+  // Alias for compatibility with existing post-processing scripts expecting IPOLE key casing.
+  h5io_add_data_dbl(fid, "/params/electrons/positronRatio", positron_ratio);
+  if (with_electrons == 0)
+  {
+    h5io_add_data_dbl(fid, "/params/electrons/tp_over_te", tp_over_te);
+  }
+  else if (with_electrons == 2 || with_electrons == 4)
+  {
+    h5io_add_data_dbl(fid, "/params/electrons/rlow", trat_small);
+    h5io_add_data_dbl(fid, "/params/electrons/rhigh", trat_large);
+    if (with_electrons == 4)
+    {
+      h5io_add_data_dbl(fid, "/params/electrons/sigma_transition", sigma_transition);
+      h5io_add_data_dbl(fid, "/params/electrons/constant_beta_e0", constant_beta_e0);
+      h5io_add_data_dbl(fid, "/params/electrons/constant_beta_e0_exponent", constant_beta_e0_exponent);
+      h5io_add_data_int(fid, "/params/electrons/constant_beta_paper_literal", constant_beta_paper_literal);
+      h5io_add_data_dbl(fid, "/params/electrons/jet_sigma_cut", jet_sigma_cut);
+      h5io_add_data_dbl(fid, "/params/electrons/jet_beta_cut", jet_beta_cut);
+      h5io_add_data_dbl(fid, "/params/electrons/jet_thetae", jet_thetae);
+      h5io_add_data_dbl(fid, "/params/electrons/jet_ne_mult", jet_ne_mult);
+    }
+  }
+  else if (with_electrons == 3 || with_electrons == 5)
+  {
+    h5io_add_data_dbl(fid, "/params/electrons/beta_crit_coefficient", beta_crit_coefficient);
+    h5io_add_data_dbl(fid, "/params/electrons/beta_crit", beta_crit);
+    if (with_electrons == 5)
+    {
+      h5io_add_data_dbl(fid, "/params/electrons/sigma_transition", sigma_transition);
+      h5io_add_data_dbl(fid, "/params/electrons/constant_beta_e0", constant_beta_e0);
+      h5io_add_data_dbl(fid, "/params/electrons/constant_beta_e0_exponent", constant_beta_e0_exponent);
+      h5io_add_data_int(fid, "/params/electrons/constant_beta_paper_literal", constant_beta_paper_literal);
+      h5io_add_data_dbl(fid, "/params/electrons/jet_sigma_cut", jet_sigma_cut);
+      h5io_add_data_dbl(fid, "/params/electrons/jet_beta_cut", jet_beta_cut);
+      h5io_add_data_dbl(fid, "/params/electrons/jet_thetae", jet_thetae);
+      h5io_add_data_dbl(fid, "/params/electrons/jet_ne_mult", jet_ne_mult);
+    }
+  }
+  h5io_add_data_int(fid, "/params/electrons/type", with_electrons);
+
+  // Finding H2: isnan-nu photon drops and the weight lost to them. Jet branches hit
+  // this substantially more than non-jet branches -- see
+  // docs/audits/2026-07-23_jet_electron_temperature_audit.md, Finding H2.
+  // Stored as dbl (not int) since counts are accumulated as long long/double in the
+  // run and there is no h5io_add_data_lng helper.
+  h5io_add_group(fid, "/params/diagnostics");
+  h5io_add_data_dbl(fid, "/params/diagnostics/N_init_reject_nu", (double) N_init_reject_nu);
+  h5io_add_data_dbl(fid, "/params/diagnostics/N_track_reject_nu", (double) N_track_reject_nu);
+  h5io_add_data_dbl(fid, "/params/diagnostics/W_track_reject_nu", W_track_reject_nu);
+  h5io_add_data_dbl(fid, "/params/diagnostics/W_superph_made", W_superph_made);
+  h5io_add_data_dbl(fid, "/params/diagnostics/track_reject_nu_weight_frac",
+                     (W_superph_made > 0.0) ? (W_track_reject_nu / W_superph_made) : 0.0);
+
+  // temporary data buffers
+  double lnu_buf[N_EBINS];
+  double dOmega_buf[N_THBINS];
+  double nuLnu_buf[N_TYPEBINS][N_EBINS][N_THBINS];
+  double tau_abs_buf[N_TYPEBINS][N_EBINS][N_THBINS];
+  double tau_scatt_buf[N_TYPEBINS][N_EBINS][N_THBINS];
+  double x1av_buf[N_TYPEBINS][N_EBINS][N_THBINS];
+  double x2av_buf[N_TYPEBINS][N_EBINS][N_THBINS];
+  double x3av_buf[N_TYPEBINS][N_EBINS][N_THBINS];
+  double nscatt_buf[N_TYPEBINS][N_EBINS][N_THBINS];
+  double Lcomponent_buf[N_TYPEBINS];
+
+  // normal output routine
+  double dOmega, nuLnu, tau_scatt, L, Lcomponent, dL;
+
+  max_tau_scatt = 0.;
+  L = 0.;
+  dL = 0.;
+
+  for (int j = 0; j < N_THBINS; ++j)
+  {
+    // warning: this assumes geodesic X \in [0,1]
+    dOmega_buf[j] = 2. * dOmega_func(j);
+  }
+
+  for (int k = 0; k < N_TYPEBINS; ++k)
+  {
+    Lcomponent = 0.;
+    for (int i = 0; i < N_EBINS; ++i)
+    {
+      lnu_buf[i] = (i * dlE + lE0) / M_LN10;
+      for (int j = 0; j < N_THBINS; ++j)
+      {
+
+        dOmega = dOmega_buf[j];
+
+        nuLnu = (ME * CL * CL) * (4. * M_PI / dOmega) * (1. / dlE);
+        nuLnu *= spect[k][j][i].dEdlE / LSUN;
+
+        tau_scatt = spect[k][j][i].tau_scatt / (spect[k][j][i].dNdlE + SMALL);
+
+        nuLnu_buf[k][i][j] = nuLnu;
+        tau_abs_buf[k][i][j] = spect[k][j][i].tau_abs / (spect[k][j][i].dNdlE + SMALL);
+        tau_scatt_buf[k][i][j] = tau_scatt;
+        x1av_buf[k][i][j] = spect[k][j][i].X1iav / (spect[k][j][i].dNdlE + SMALL);
+        x2av_buf[k][i][j] = sqrt(fabs(spect[k][j][i].X2isq / (spect[k][j][i].dNdlE + SMALL)));
+        x3av_buf[k][i][j] = sqrt(fabs(spect[k][j][i].X3fsq / (spect[k][j][i].dNdlE + SMALL)));
+        nscatt_buf[k][i][j] = spect[k][j][i].nscatt / (spect[k][j][i].dNdlE + SMALL);
+
+        if (tau_scatt > max_tau_scatt)
+          max_tau_scatt = tau_scatt;
+
+        dL += ME * CL * CL * spect[k][j][i].dEdlE;
+        L += nuLnu * dOmega * dlE / (4. * M_PI);
+        Lcomponent += nuLnu * dOmega * dlE / (4. * M_PI);
+      }
+    }
+    Lcomponent_buf[k] = Lcomponent;
+  }
+
+  h5io_add_group(fid, "/output");
+
+  h5io_add_data_dbl_1d(fid, "/output/lnu", N_EBINS, lnu_buf);
+  h5io_add_data_dbl_1d(fid, "/output/dOmega", N_THBINS, dOmega_buf);
+  h5io_add_data_dbl_3d(fid, "/output/nuLnu", N_TYPEBINS, N_EBINS, N_THBINS, nuLnu_buf);
+  h5io_add_data_dbl_3d(fid, "/output/tau_abs", N_TYPEBINS, N_EBINS, N_THBINS, tau_abs_buf);
+  h5io_add_data_dbl_3d(fid, "/output/tau_scatt", N_TYPEBINS, N_EBINS, N_THBINS, tau_scatt_buf);
+  h5io_add_data_dbl_3d(fid, "/output/x1av", N_TYPEBINS, N_EBINS, N_THBINS, x1av_buf);
+  h5io_add_data_dbl_3d(fid, "/output/x2av", N_TYPEBINS, N_EBINS, N_THBINS, x2av_buf);
+  h5io_add_data_dbl_3d(fid, "/output/x3av", N_TYPEBINS, N_EBINS, N_THBINS, x3av_buf);
+  h5io_add_data_dbl_3d(fid, "/output/nscatt", N_TYPEBINS, N_EBINS, N_THBINS, nscatt_buf);
+  h5io_add_data_dbl_1d(fid, "/output/Lcomponent", N_TYPEBINS, Lcomponent_buf);
+
+  h5io_add_data_int(fid, "/output/Nrecorded", N_superph_recorded);
+  h5io_add_data_int(fid, "/output/Nmade", N_superph_made);
+  h5io_add_data_int(fid, "/output/Nscattered", N_scatt);
+  h5io_add_data_int(fid, "/output/run_status_code", run_status_code);
+  h5io_add_data_str(fid, "/output/run_status", run_status);
+  h5io_add_data_str(fid, "/output/run_status_detail", run_status_detail);
+  h5io_add_data_dbl(fid, "/output/effectiveness_ratio_final",
+                    N_superph_made > 0 ? (double)N_scatt / (double)N_superph_made : 0.0);
+
+  double LEdd = 4. * M_PI * GNEWT * MBH * MP * CL / SIGMA_THOMSON;
+  double MdotEdd = 4. * M_PI * GNEWT * MBH * MP / (SIGMA_THOMSON * CL * 0.1);
+  double Lum = L * LSUN;
+  double lum = Lum / LEdd;
+  double Mdot = dMact * M_unit / T_unit;
+  double mdot = Mdot / MdotEdd;
+
+  h5io_add_data_dbl(fid, "/output/L", Lum);
+  h5io_add_data_dbl(fid, "/output/Mdot", Mdot);
+  h5io_add_data_dbl(fid, "/output/LEdd", LEdd);
+  h5io_add_data_dbl(fid, "/output/MdotEdd", MdotEdd);
+  h5io_add_data_dbl(fid, "/output/efficiency", L * LSUN / (dMact * M_unit * CL * CL / T_unit));
+
+  h5io_add_attribute_str(fid, "/output/L", "units", "erg/s");
+  h5io_add_attribute_str(fid, "/output/LEdd", "units", "erg/s");
+  h5io_add_attribute_str(fid, "/output/Mdot", "units", "g/s");
+  h5io_add_attribute_str(fid, "/output/MdotEdd", "units", "g/s");
+
+  // diagnostic output to screen
+  fprintf(stderr, "\n");
+
+  fprintf(stderr, "MBH = %g Msun\n", MBH / MSUN);
+  fprintf(stderr, "a = %g\n", a);
+
+  fprintf(stderr, "dL = %g\n", dL);
+  fprintf(stderr, "dMact = %g\n", dMact * M_unit / T_unit / (MSUN / YEAR));
+  fprintf(stderr, "efficiency = %g\n", L * LSUN / (dMact * M_unit * CL * CL / T_unit));
+  fprintf(stderr, "L/Ladv = %g\n", L * LSUN / (Ladv * M_unit * CL * CL / T_unit));
+  fprintf(stderr, "max_tau_scatt = %g\n", max_tau_scatt);
+  fprintf(stderr, "Mdot = %g g/s, MdotEdd = %g g/s, mdot = %g MdotEdd\n", Mdot, MdotEdd, mdot);
+  fprintf(stderr, "L = %g erg/s, LEdd = %g erg/s, lum = %g LEdd\n", Lum, LEdd, lum);
+
+  fprintf(stderr, "\n");
+
+  fprintf(stderr, "N_superph_made = %d\n", N_superph_made);
+  fprintf(stderr, "N_superph_scatt = %d\n", N_scatt);
+  fprintf(stderr, "N_superph_recorded = %d\n", N_superph_recorded);
+
+  H5Fclose(fid);
+}
